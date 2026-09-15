@@ -4,7 +4,7 @@ services:
     container_name: postgres_postgis_api_geo
     environment:
       POSTGRES_USER: root
-      POSTGRES_PASSWORD: sua_senha_local_aqui
+      POSTGRES_PASSWORD: root
       POSTGRES_DB: sistema_geo
     ports:
       - "5432:5432"
