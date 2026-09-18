@@ -1,14 +1,15 @@
 package com.bifrostconnect.api_geo.service;
 
-import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
-import com.bifrostconnect.api_geo.entity.Processo;
-import com.bifrostconnect.api_geo.repository.ArquivoOriginalRepository;
-import com.bifrostconnect.api_geo.repository.ProcessoRepository;
+import java.security.MessageDigest;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.security.MessageDigest;
+import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
+import com.bifrostconnect.api_geo.entity.Processo;
+import com.bifrostconnect.api_geo.repository.ArquivoOriginalRepository;
+import com.bifrostconnect.api_geo.repository.ProcessoRepository;
 
 @Service
 public class ArquivoUploadService {
@@ -36,10 +37,13 @@ public class ArquivoUploadService {
 
         ArquivoOriginal arquivo = new ArquivoOriginal();
         arquivo.setProcesso(processo);
-        arquivo.setNomeArquivo(file.getOriginalFilename());
+        arquivo.setNomeOriginal(file.getOriginalFilename());
         arquivo.setHashSha256(hexString.toString());
         arquivo.setTamanhoBytes(file.getSize());
-        arquivo.setCaminhoStorage("/uploads/" + file.getOriginalFilename()); // Ajuste conforme local real
+        arquivo.setUrlArmazenamento("/uploads/" + file.getOriginalFilename());
+        
+        // CORREÇÃO: Preenchendo o campo obrigatório (not-null) no banco de dados
+        arquivo.setUsuarioUploadId(1L); 
 
         return arquivoRepository.save(arquivo);
     }

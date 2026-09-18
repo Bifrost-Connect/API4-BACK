@@ -8,6 +8,9 @@ public class MetadadosCargaRequest {
     @NotNull(message = "O órgão é obrigatório")
     private Long orgaoId;
 
+    @NotNull(message = "O conjunto é obrigatório")
+    private Long conjuntoId; // <--- Adicionado para preencher a coluna not-null do banco
+
     @NotBlank(message = "O ano da safra é obrigatório")
     private String anoSafra;
 
@@ -17,8 +20,9 @@ public class MetadadosCargaRequest {
     public MetadadosCargaRequest() {
     }
 
-    public MetadadosCargaRequest(Long orgaoId, String anoSafra, String epsgOrigem) {
+    public MetadadosCargaRequest(Long orgaoId, Long conjuntoId, String anoSafra, String epsgOrigem) {
         this.orgaoId = orgaoId;
+        this.conjuntoId = conjuntoId;
         this.anoSafra = anoSafra;
         this.epsgOrigem = epsgOrigem;
     }
@@ -29,6 +33,14 @@ public class MetadadosCargaRequest {
 
     public void setOrgaoId(Long orgaoId) {
         this.orgaoId = orgaoId;
+    }
+
+    public Long getConjuntoId() {
+        return conjuntoId;
+    }
+
+    public void setConjuntoId(Long conjuntoId) {
+        this.conjuntoId = conjuntoId;
     }
 
     public String getAnoSafra() {
