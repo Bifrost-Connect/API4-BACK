@@ -19,7 +19,7 @@ public class ArquivoOriginal {
     @JoinColumn(name = "processo_id", nullable = false)
     private Processo processo;
 
-    @Column(name = "nome_arquivo", nullable = false)
+    @Column(name = "nome_original", nullable = false)
     private String nomeArquivo;
 
     @Column(name = "hash_sha256", nullable = false)
@@ -28,8 +28,8 @@ public class ArquivoOriginal {
     @Column(name = "tamanho_bytes", nullable = false)
     private Long tamanhoBytes;
 
-    @Column(name = "caminho_storage", nullable = false)
-    private String caminhoStorage;
+    @Column(name = "url_armazenamento", nullable = false)
+    private String urlArmazenamento;
 
     @Column(name = "data_upload", insertable = false, updatable = false)
     private LocalDateTime dataUpload;

@@ -15,14 +15,14 @@ public class Processo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "usuario_id", nullable = false)
-    private Long usuarioId;
+   @Column(name = "operador_id", nullable = false)
+    private Long operadorId;
 
-    @Column(name = "ano", nullable = false)
-    private Integer ano;
+    @Column(name = "ano_safra", nullable = false)
+    private String anoSafra;
 
-    @Column(name = "epsg", nullable = false)
-    private Integer epsg;
+   @Column(name = "epsg_origem", nullable = false)
+    private String epsgOrigem;
 
     @Column(name = "data_criacao", insertable = false, updatable = false)
     private LocalDateTime dataCriacao;

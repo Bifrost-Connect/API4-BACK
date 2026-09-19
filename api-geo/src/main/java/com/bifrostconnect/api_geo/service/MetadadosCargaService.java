@@ -22,9 +22,9 @@ public class MetadadosCargaService {
 
         // Mapeamento do DTO para a Entidade de Banco
         Processo processo = new Processo();
-        processo.setUsuarioId(request.getOrgaoId());
-        processo.setAno(Integer.parseInt(request.getAnoSafra()));
-        processo.setEpsg(Integer.parseInt(request.getEpsgOrigem()));
+        processo.setOperadorId(request.getOrgaoId());
+        processo.setAnoSafra(request.getAnoSafra());
+        processo.setEpsgOrigem(request.getEpsgOrigem());
 
         // Salva e retorna o processo criado
         return processoRepository.save(processo);

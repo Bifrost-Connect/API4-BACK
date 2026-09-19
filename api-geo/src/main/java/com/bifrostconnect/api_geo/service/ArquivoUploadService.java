@@ -39,7 +39,7 @@ public class ArquivoUploadService {
         arquivo.setNomeArquivo(file.getOriginalFilename());
         arquivo.setHashSha256(hexString.toString());
         arquivo.setTamanhoBytes(file.getSize());
-        arquivo.setCaminhoStorage("/uploads/" + file.getOriginalFilename()); // Ajuste conforme local real
+        arquivo.setUrlArmazenamento("/uploads/" + file.getOriginalFilename()); // Ajuste conforme local real
 
         return arquivoRepository.save(arquivo);
     }
