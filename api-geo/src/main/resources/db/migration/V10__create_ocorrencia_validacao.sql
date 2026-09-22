@@ -2,6 +2,8 @@
 
 CREATE TABLE ocorrencia_validacao (
     id                  BIGSERIAL PRIMARY KEY,
+    mensagem            TEXT,
+    data_criacao TIMESTAMP NOT NULL DEFAULT now(),
     processo_id         BIGINT NOT NULL REFERENCES processo(id),
     processo_etapa_id   BIGINT NOT NULL REFERENCES processo_etapa(id),
     regra_id            BIGINT NOT NULL REFERENCES regra_validacao(id),
