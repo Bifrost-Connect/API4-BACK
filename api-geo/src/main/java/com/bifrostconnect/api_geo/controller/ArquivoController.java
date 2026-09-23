@@ -29,6 +29,23 @@ public class ArquivoController {
             @RequestParam("processoId") Long processoId,
             @RequestParam("usuarioId") Long usuarioId) {
 
+        // Tarefa 5: Retornar Status 400 se o corpo da requisição estiver vazio
+        if (file.isEmpty()) {
+            Map<String, Object> erroResponse = new HashMap<>();
+            erroResponse.put("sucesso", false);
+            erroResponse.put("erro", "O arquivo enviado está vazio.");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(erroResponse);
+        }
+
+        // Tarefa 5: Retornar Status 415 se a extensão for inválida
+        String nomeArquivo = file.getOriginalFilename();
+        if (nomeArquivo == null || (!nomeArquivo.toLowerCase().endsWith(".geojson") && !nomeArquivo.toLowerCase().endsWith(".zip"))) {
+            Map<String, Object> erroResponse = new HashMap<>();
+            erroResponse.put("sucesso", false);
+            erroResponse.put("erro", "Tipo de arquivo não suportado. Envie .geojson ou .zip.");
+            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(erroResponse);
+        }
+
         try {
             // Chama a regra de negócio
             ArquivoOriginal arquivoSalvo = arquivoService.processarEArmazenarArquivo(file, processoId, usuarioId);
