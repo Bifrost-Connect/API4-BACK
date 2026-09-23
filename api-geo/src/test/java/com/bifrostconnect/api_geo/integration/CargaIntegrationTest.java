@@ -27,6 +27,7 @@ public class CargaIntegrationTest {
     private JdbcTemplate jdbcTemplate;
 
     private final RestTemplate restTemplate = new RestTemplate();
+    private Integer processoTesteId;
 
     @BeforeEach
     public void setUp() {
@@ -60,14 +61,16 @@ public class CargaIntegrationTest {
     }
 
     @AfterEach
-    public void tearDown() {
-        // Limpa os dados inseridos para não afetar outros testes
-        jdbcTemplate.update("DELETE FROM processo WHERE operador_id = 1;");
-        jdbcTemplate.update("DELETE FROM usuario WHERE id = 1;");
-        jdbcTemplate.update("DELETE FROM perfil WHERE id = 1;");
-        jdbcTemplate.update("DELETE FROM conjunto WHERE id = 1;");
-        jdbcTemplate.update("DELETE FROM orgao WHERE id = 1;");
+public void tearDown() {
+    // remove o processo de teste (guarda o ID para exclusão)
+    // segue as regras de permissão da zona bruta
+    if (processoTesteId != null) {
+        jdbcTemplate.update(
+            "DELETE FROM processo WHERE id = ?;",
+            processoTesteId
+        );
     }
+}
 
     @Test
     public void deveCriarMetadadosEEncontrarNaListagem() {
@@ -93,6 +96,7 @@ public class CargaIntegrationTest {
 
             Integer idGerado = JsonPath.read(postResponse.getBody(), "$.id");
             assertNotNull(idGerado);
+            processoTesteId = idGerado;
 
             String urlGet = "http://localhost:" + port + "/processos/" + idGerado;
             ResponseEntity<String> getResponse = restTemplate.getForEntity(urlGet, String.class);

@@ -1,10 +1,20 @@
 package com.bifrostconnect.api_geo.controller;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -67,4 +77,44 @@ public class ArquivoController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(erroResponse);
         }
     }
+    // método que retorna o arquivo original, preservando o formato e o conteúdo
+    @GetMapping("/{id}")
+    public ResponseEntity<Resource> baixarArquivoOriginal(@PathVariable Long id) {
+
+    try {
+        ArquivoOriginal arquivo = arquivoService.buscarArquivoOriginal(id);
+
+        Path caminho = Paths.get(arquivo.getUrlArmazenamento());
+
+        if (!Files.exists(caminho)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        ByteArrayResource recurso = new ByteArrayResource(Files.readAllBytes(caminho));
+
+        MediaType tipoMedia = MediaType.APPLICATION_OCTET_STREAM;
+
+        if (arquivo.getTipoMime() != null && !arquivo.getTipoMime().isBlank()) {
+            try {
+                tipoMedia = MediaType.parseMediaType(arquivo.getTipoMime());
+            } catch (Exception ignored) {
+                
+            }
+        }
+
+        return ResponseEntity.ok()
+                .contentType(tipoMedia)
+                .header(
+                    HttpHeaders.CONTENT_DISPOSITION,
+                    "attachment; filename=\"" + arquivo.getNomeOriginal() + "\""
+                )
+                .body(recurso);
+
+    } catch (IllegalArgumentException e) {
+        return ResponseEntity.notFound().build();
+
+    } catch (IOException e) {
+        return ResponseEntity.internalServerError().build();
+    }
+}
 }

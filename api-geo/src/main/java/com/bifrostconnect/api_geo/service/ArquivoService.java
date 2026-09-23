@@ -67,4 +67,10 @@ public class ArquivoService {
         // 5. Salva no banco de dados e retorna os dados
         return repository.save(registro);
     }
+// busca o arquivo original pelo ID, lançando exceção se não encontrado
+    public ArquivoOriginal buscarArquivoOriginal(Long id) {
+    return repository.findById(id)
+            .orElseThrow(() ->
+                    new IllegalArgumentException("Arquivo original não encontrado: " + id));
+}
 }
