@@ -25,12 +25,12 @@ public class MetadadosCargaService {
         Processo processo = new Processo();
         
         // Atribuições completas para satisfazer as restrições NOT NULL do banco
-        processo.setOperadorId(request.getOrgaoId()); // Ou ID do operador/usuário correspondente
-        processo.setOrgaoId(request.getOrgaoId());     // Define o órgão vinculado
-        processo.setConjuntoId(request.getConjuntoId()); // Define o conjunto vinculado (evita o erro null na coluna)
         
-        processo.setAno(request.getAnoSafra());
-        processo.setEpsg(request.getEpsgOrigem());
+        processo.setConjuntoId(request.getConjuntoId());
+        processo.setOrgaoId(request.getOrgaoId());
+        processo.setOperadorId(request.getOperadorId());
+        processo.setAnoSafra(request.getAnoSafra());
+        processo.setEpsgOrigem(request.getEpsgOrigem());
 
         // Salva e retorna o processo criado
         return processoRepository.save(processo);

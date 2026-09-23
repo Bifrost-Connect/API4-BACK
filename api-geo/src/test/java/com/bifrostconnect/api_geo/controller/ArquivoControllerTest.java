@@ -72,8 +72,8 @@ class ArquivoControllerTest {
         processo.setOrgaoId(1L);
         processo.setOperadorId(1L);
         processo.setConjuntoId(1L);
-        processo.setAno("2025/2026");
-        processo.setEpsg("EPSG:4326");
+        processo.setAnoSafra("2025");
+        processo.setEpsgOrigem("4326");
 
         Processo processoSalvo = processoRepository.save(processo);
         this.processoId = processoSalvo.getId();

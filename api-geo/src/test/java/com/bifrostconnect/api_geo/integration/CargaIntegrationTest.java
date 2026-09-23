@@ -100,7 +100,7 @@ public class CargaIntegrationTest {
             assertEquals(200, getResponse.getStatusCode().value());
             
             // Alterado para "$.ano" conforme retornado pela API
-            String anoRetornado = JsonPath.read(getResponse.getBody(), "$.ano");
+             String anoRetornado = JsonPath.read(getResponse.getBody(), "$.anoSafra");
             assertEquals("2024", anoRetornado);
 
         } catch (org.springframework.web.client.HttpStatusCodeException e) {

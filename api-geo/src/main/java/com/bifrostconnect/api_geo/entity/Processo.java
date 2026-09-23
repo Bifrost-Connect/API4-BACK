@@ -23,21 +23,36 @@ public class Processo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "orgao_id", nullable = false)
-    private Long orgaoId;
+    @Column(name = "operador_id", nullable = false)
+    private Long operadorId;
 
     @Column(name = "conjunto_id", nullable = false)
     private Long conjuntoId;
 
-    @Column(name = "operador_id", nullable = false)
-    private Long operadorId; // Ajustado conforme a tabela real do banco
+    @Column(name = "orgao_id", nullable = false)
+    private Long orgaoId;
 
-    @Column(name = "ano_safra", nullable = false)
-    private String ano; // Mantém o atributo como 'ano' para usar setAno()
+    @Column(name = "etapa_atual_id")
+    private Long etapaAtualId;
 
-    @Column(name = "epsg_origem", nullable = false)
-    private String epsg; // Ajustado para 'epsg_origem' e tipo String para aceitar texto
-    
+    @Column(name = "situacao_atual_id")
+    private Long situacaoAtualId;
+
+    @Column(name = "ano_safra", nullable = false, length = 10)
+    private String anoSafra;
+
+    @Column(name = "epsg_origem", nullable = false, length = 20)
+    private String epsgOrigem;
+
+    @Column(name = "epsg_destino", length = 20)
+    private String epsgDestino;
+
     @Column(name = "data_criacao", insertable = false, updatable = false)
     private LocalDateTime dataCriacao;
+
+    @Column(name = "data_inicio")
+    private LocalDateTime dataInicio;
+
+    @Column(name = "data_fim")
+    private LocalDateTime dataFim;
 }
