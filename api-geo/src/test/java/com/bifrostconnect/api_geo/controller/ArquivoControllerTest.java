@@ -95,6 +95,10 @@ class ArquivoControllerTest {
                         .param("usuarioId", "1"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.sucesso").value(true))
-                .andExpect(jsonPath("$.mensagem").value("Carga realizada na Zona Bruta com sucesso!"));
+                .andExpect(jsonPath("$.mensagem").value("Carga realizada na Zona Bruta com sucesso!"))
+
+                // Validações da Tarefa 2: Garante que o Hash e o ID são retornados no JSON
+                .andExpect(jsonPath("$.hash_sha256").exists())
+                .andExpect(jsonPath("$.id_arquivo").exists());
     }
 }
