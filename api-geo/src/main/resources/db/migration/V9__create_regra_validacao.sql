@@ -2,6 +2,7 @@
 
 CREATE TABLE regra_validacao (
     id          BIGSERIAL PRIMARY KEY,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
     nome        VARCHAR(100) NOT NULL,
     descricao   VARCHAR(255),
     tipo        VARCHAR(50),

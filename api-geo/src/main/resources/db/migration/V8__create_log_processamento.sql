@@ -2,6 +2,7 @@
 
 CREATE TABLE log_processamento (
     id                  BIGSERIAL PRIMARY KEY,
+    processo_id BIGINT REFERENCES processo(id),
     processo_etapa_id   BIGINT NOT NULL REFERENCES processo_etapa(id),
     nivel               VARCHAR(20) NOT NULL,
     mensagem            TEXT NOT NULL,

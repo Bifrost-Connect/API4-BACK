@@ -1,10 +1,11 @@
 package com.bifrostconnect.api_geo.service;
 
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.bifrostconnect.api_geo.dto.MetadadosCargaRequest;
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MetadadosCargaService {
@@ -22,9 +23,14 @@ public class MetadadosCargaService {
 
         // Mapeamento do DTO para a Entidade de Banco
         Processo processo = new Processo();
-        processo.setUsuarioId(request.getOrgaoId());
-        processo.setAno(Integer.parseInt(request.getAnoSafra()));
-        processo.setEpsg(Integer.parseInt(request.getEpsgOrigem()));
+        
+        // Atribuições completas para satisfazer as restrições NOT NULL do banco
+        processo.setOperadorId(request.getOrgaoId()); // Ou ID do operador/usuário correspondente
+        processo.setOrgaoId(request.getOrgaoId());     // Define o órgão vinculado
+        processo.setConjuntoId(request.getConjuntoId()); // Define o conjunto vinculado (evita o erro null na coluna)
+        
+        processo.setAno(request.getAnoSafra());
+        processo.setEpsg(request.getEpsgOrigem());
 
         // Salva e retorna o processo criado
         return processoRepository.save(processo);

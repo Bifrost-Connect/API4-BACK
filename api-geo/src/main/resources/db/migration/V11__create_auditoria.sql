@@ -6,6 +6,7 @@ CREATE TABLE auditoria (
     processo_id     BIGINT REFERENCES processo(id),
     acao            VARCHAR(100) NOT NULL,
     descricao       TEXT,
+    detalhes        TEXT,
     data_hora       TIMESTAMP NOT NULL DEFAULT now(),
     ip              VARCHAR(45)
 );
