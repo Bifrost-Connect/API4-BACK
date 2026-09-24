@@ -64,7 +64,6 @@ public class CargaIntegrationTest {
         // Limpa os dados inseridos para não afetar outros testes
         jdbcTemplate.update("DELETE FROM processo WHERE operador_id = 1;");
         jdbcTemplate.update("DELETE FROM usuario WHERE id = 1;");
-        jdbcTemplate.update("DELETE FROM perfil WHERE id = 1;");
         jdbcTemplate.update("DELETE FROM conjunto WHERE id = 1;");
         jdbcTemplate.update("DELETE FROM orgao WHERE id = 1;");
     }
@@ -99,7 +98,7 @@ public class CargaIntegrationTest {
             
             assertEquals(200, getResponse.getStatusCode().value());
             
-            // Alterado para "$.ano" conforme retornado pela API
+            // Alterado para "$.anoSafra" conforme retornado pela API
              String anoRetornado = JsonPath.read(getResponse.getBody(), "$.anoSafra");
             assertEquals("2024", anoRetornado);
 
