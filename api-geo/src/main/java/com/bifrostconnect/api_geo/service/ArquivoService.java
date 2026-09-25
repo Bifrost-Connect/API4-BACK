@@ -5,22 +5,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ArquivoOriginalRepository;
+import lombok.RequiredArgsConstructor;
 
 @Service
+@RequiredArgsConstructor
 public class ArquivoService {
 
-    @Autowired
-    private ArquivoOriginalRepository repository;
-
-    @Autowired
-    private HashService hashService;
+    private final ArquivoOriginalRepository repository;
+    private final HashService hashService;
 
     // Diretório local que simula o Object Storage da Zona Bruta
     private final String STORAGE_DIR = "zona_bruta_storage/";
