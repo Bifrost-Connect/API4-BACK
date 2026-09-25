@@ -61,6 +61,7 @@ public class CargaIntegrationTest {
     }
 
     @AfterEach
+<<<<<<< HEAD
 public void tearDown() {
     // remove o processo de teste (guarda o ID para exclusão)
     // segue as regras de permissão da zona bruta
@@ -69,6 +70,14 @@ public void tearDown() {
             "DELETE FROM processo WHERE id = ?;",
             processoTesteId
         );
+=======
+    public void tearDown() {
+        // Limpa os dados inseridos para não afetar outros testes
+        jdbcTemplate.update("DELETE FROM processo WHERE operador_id = 1;");
+        jdbcTemplate.update("DELETE FROM usuario WHERE id = 1;");
+        jdbcTemplate.update("DELETE FROM conjunto WHERE id = 1;");
+        jdbcTemplate.update("DELETE FROM orgao WHERE id = 1;");
+>>>>>>> us01-cadastro-fontes
     }
 }
 
@@ -103,8 +112,8 @@ public void tearDown() {
             
             assertEquals(200, getResponse.getStatusCode().value());
             
-            // Alterado para "$.ano" conforme retornado pela API
-            String anoRetornado = JsonPath.read(getResponse.getBody(), "$.ano");
+            // Alterado para "$.anoSafra" conforme retornado pela API
+             String anoRetornado = JsonPath.read(getResponse.getBody(), "$.anoSafra");
             assertEquals("2024", anoRetornado);
 
         } catch (org.springframework.web.client.HttpStatusCodeException e) {

@@ -7,15 +7,17 @@ import jakarta.validation.constraints.NotNull;
 
 public class MetadadosCargaRequest {
 
+@NotNull(message = "O operador é obrigatório")
+private Long operadorId;    
 
 @NotNull(message = "O órgão é obrigatório")
 
 private Long orgaoId;
 
 
-@NotNull(message = "O conjunto é obrigatório")
 
-private Long conjuntoId; // <--- Adicionado para preencher a coluna not-null do banco
+@NotNull(message = "O conjunto é obrigatório")
+private Long conjuntoId;; // <--- Adicionado para preencher a coluna not-null do banco
 
 
 @NotBlank(message = "O ano da safra é obrigatório")
@@ -33,7 +35,9 @@ public MetadadosCargaRequest() {
 }
 
 
-public MetadadosCargaRequest(Long orgaoId, Long conjuntoId, String anoSafra, String epsgOrigem) {
+public MetadadosCargaRequest(Long operadorId, Long orgaoId, Long conjuntoId, String anoSafra, String epsgOrigem) {
+
+this.operadorId = operadorId;
 
 this.orgaoId = orgaoId;
 
@@ -99,6 +103,13 @@ public void setEpsgOrigem(String epsgOrigem) {
 
 this.epsgOrigem = epsgOrigem;
 
+}
+public Long getOperadorId() {
+    return operadorId;
+}
+
+public void setOperadorId(Long operadorId) {
+    this.operadorId = operadorId;
 }
 
 } 
