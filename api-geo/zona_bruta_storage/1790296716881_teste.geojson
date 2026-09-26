@@ -1,0 +1,15 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "يند": [-46.6333, -23.5505]
+      },
+      "properties": {
+        "nome": "Ponto de Teste"
+      }
+    }
+  ]
+}

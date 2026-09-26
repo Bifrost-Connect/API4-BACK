@@ -1,5 +1,9 @@
 package com.bifrostconnect.api_geo.controller;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,6 +21,7 @@ import org.springframework.web.context.WebApplicationContext;
 
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
+import com.bifrostconnect.api_geo.service.ValidacaoService;
 
 @SpringBootTest
 @Transactional
@@ -33,8 +38,12 @@ class ArquivoControllerTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private ValidacaoService validacaoService;
+
     private Long processoId;
 
+    @SuppressWarnings("unused")
     @BeforeEach
     void setUp() {
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
@@ -67,13 +76,13 @@ class ArquivoControllerTest {
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        // 5. Agora sim, cria o processo com as dependências satisfeitas
+        // 5. Cria o processo com as dependências satisfeitas
         Processo processo = new Processo();
         processo.setOrgaoId(1L);
         processo.setOperadorId(1L);
         processo.setConjuntoId(1L);
-        processo.setAno("2025/2026");
-        processo.setEpsg("EPSG:4326");
+        processo.setAnoSafra("2025");
+        processo.setEpsgOrigem("4326");
 
         Processo processoSalvo = processoRepository.save(processo);
         this.processoId = processoSalvo.getId();
@@ -100,5 +109,44 @@ class ArquivoControllerTest {
                 // Validações da Tarefa 2: Garante que o Hash e o ID são retornados no JSON
                 .andExpect(jsonPath("$.hash_sha256").exists())
                 .andExpect(jsonPath("$.id_arquivo").exists());
+    }
+
+    @Test
+    @DisplayName("Tarefa 1 (Motor Espacial): Deve ler GeoJSON e validar motor espacial sem sobreposição")
+    void deveValidarMotorEspacialComSucesso() throws Exception {
+        String geoJsonConteudo = """
+            {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "properties": { "nome": "Polígono Teste" },
+                  "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                      [
+                        [-46.633308, -23.550520],
+                        [-46.633308, -23.551520],
+                        [-46.632308, -23.551520],
+                        [-46.632308, -23.550520],
+                        [-46.633308, -23.550520]
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+        """;
+
+        Path arquivoTemp = Files.createTempFile("teste_motor_espacial", ".geojson");
+        Files.writeString(arquivoTemp, geoJsonConteudo);
+
+        Processo processo = processoRepository.findById(processoId).orElseThrow();
+
+        boolean valido = validacaoService.executarValidacoes(processo, "teste_motor_espacial.geojson", arquivoTemp);
+
+        assertTrue(valido, "A validação do motor espacial deve passar sem sobreposições prévias.");
+
+        Files.deleteIfExists(arquivoTemp);
     }
 }

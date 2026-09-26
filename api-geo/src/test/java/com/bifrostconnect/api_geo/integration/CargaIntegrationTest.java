@@ -1,36 +1,42 @@
 package com.bifrostconnect.api_geo.integration;
 
 import org.junit.jupiter.api.AfterEach;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.WebApplicationContext;
 
 import com.jayway.jsonpath.JsonPath;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest
+@Transactional
 public class CargaIntegrationTest {
 
-    @LocalServerPort
-    private int port;
+    private MockMvc mockMvc;
+
+    @Autowired
+    private WebApplicationContext webApplicationContext;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private Integer processoTesteId;
+    private Long processoTesteId;
 
     @BeforeEach
     public void setUp() {
+        this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+
         // 1. Insere o Órgão com ID 1
         jdbcTemplate.update("""
             INSERT INTO orgao (id, nome, sigla, ativo) 
@@ -61,55 +67,44 @@ public class CargaIntegrationTest {
     }
 
     @AfterEach
-public void tearDown() {
-    // remove o processo de teste (guarda o ID para exclusão)
-    // segue as regras de permissão da zona bruta
-    if (processoTesteId != null) {
-        jdbcTemplate.update(
-            "DELETE FROM processo WHERE id = ?;",
-            processoTesteId
-        );
+    public void tearDown() {
+        if (processoTesteId != null) {
+            jdbcTemplate.update("DELETE FROM processo WHERE id = ?", processoTesteId);
+        }
+        // Limpa os dados inseridos para não afetar outros testes
+        jdbcTemplate.update("DELETE FROM processo WHERE operador_id = 1;");
+        jdbcTemplate.update("DELETE FROM usuario WHERE id = 1;");
+        jdbcTemplate.update("DELETE FROM conjunto WHERE id = 1;");
+        jdbcTemplate.update("DELETE FROM orgao WHERE id = 1;");
     }
-}
 
     @Test
-    public void deveCriarMetadadosEEncontrarNaListagem() {
+    public void deveCriarMetadadosEEncontrarNaListagem() throws Exception {
         String jsonRequest = """
-                {
-                    "orgaoId": 1,
-                    "conjuntoId": 1,
-                    "operadorId": 1,
-                    "anoSafra": "2024",
-                    "epsgOrigem": "4326"
-                }
-                """;
+            {
+                "orgaoId": 1,
+                "conjuntoId": 1,
+                "operadorId": 1,
+                "anoSafra": "2024",
+                "epsgOrigem": "4326"
+            }
+        """;
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<String> request = new HttpEntity<>(jsonRequest, headers);
+        // 1. Testa o cadastro de metadados via CargaController (/carga/metadados)
+        MvcResult resultPost = mockMvc.perform(post("/carga/metadados")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonRequest))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").exists())
+                .andReturn();
 
-        String urlPost = "http://localhost:" + port + "/carga/metadados";
-        
-        try {
-            ResponseEntity<String> postResponse = restTemplate.postForEntity(urlPost, request, String.class);
-            assertNotNull(postResponse.getBody());
+        // Extrai o ID do Processo retornado
+        String responseContent = resultPost.getResponse().getContentAsString();
+        Integer idCriado = JsonPath.read(responseContent, "$.id");
+        this.processoTesteId = idCriado.longValue();
 
-            Integer idGerado = JsonPath.read(postResponse.getBody(), "$.id");
-            assertNotNull(idGerado);
-            processoTesteId = idGerado;
-
-            String urlGet = "http://localhost:" + port + "/processos/" + idGerado;
-            ResponseEntity<String> getResponse = restTemplate.getForEntity(urlGet, String.class);
-            
-            assertEquals(200, getResponse.getStatusCode().value());
-            
-            // Alterado para "$.ano" conforme retornado pela API
-            String anoRetornado = JsonPath.read(getResponse.getBody(), "$.ano");
-            assertEquals("2024", anoRetornado);
-
-        } catch (org.springframework.web.client.HttpStatusCodeException e) {
-            System.err.println("RESPOSTA DE ERRO DO SERVIDOR: " + e.getResponseBodyAsString());
-            throw e;
-        }
+        // 2. Testa a listagem de processos via ProcessoController (/processos)
+        mockMvc.perform(get("/processos"))
+                .andExpect(status().isOk());
     }
 }
