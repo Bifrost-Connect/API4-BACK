@@ -45,6 +45,6 @@ public class ArquivoUploadService {
         // CORREÇÃO: Preenchendo o campo obrigatório (not-null) no banco de dados
         arquivo.setUsuarioUploadId(1L); 
 
-        return arquivoRepository.save(arquivo);
+        return arquivoRepository.saveAndFlush(arquivo);
     }
 }

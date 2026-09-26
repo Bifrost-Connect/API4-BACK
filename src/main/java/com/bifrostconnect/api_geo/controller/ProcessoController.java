@@ -94,25 +94,19 @@ public class ProcessoController {
     }
 
     /**
-     * Endpoint já existente:
-     * Retorna os detalhes completos do processo pelo ID.
-     *
-     * NÃO pertence às novas tarefas.
-     * Mantido para não quebrar a funcionalidade existente.
+     * Retorna os detalhes completos do processo pelo ID mapeado exatamente
+     * para o que o frontend espera (ProcessLogDetails).
      */
     @GetMapping("/{id}")
-    public ResponseEntity<Processo> buscarDetalhesProcesso(
+    public ResponseEntity<com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse> buscarDetalhesProcesso(
             @PathVariable Long id) {
 
-        try {
+        com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse response = 
+                processoDashboardService.buscarDetalhesProcessoFrontEnd(id);
 
-            Processo processo =
-                    processoService.buscarPorId(id);
-
-            return ResponseEntity.ok(processo);
-
-        } catch (IllegalArgumentException e) {
-
+        if (response != null) {
+            return ResponseEntity.ok(response);
+        } else {
             return ResponseEntity.notFound().build();
         }
     }

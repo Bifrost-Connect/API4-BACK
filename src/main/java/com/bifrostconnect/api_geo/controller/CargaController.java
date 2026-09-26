@@ -74,6 +74,8 @@ public class CargaController {
             return ResponseEntity.status(HttpStatus.CREATED).body(arquivoSalvo);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            return ResponseEntity.badRequest().body("Este arquivo já foi processado anteriormente (Arquivo duplicado detectado pelo Hash SHA-256).");
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Erro ao processar o upload do arquivo: " + e.getMessage());

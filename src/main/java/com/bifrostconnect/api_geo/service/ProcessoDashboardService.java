@@ -67,4 +67,8 @@ public class ProcessoDashboardService {
 
         return repository.buscarLogEspacial(processoId);
     }
+    
+    public com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse buscarDetalhesProcessoFrontEnd(Long processoId) {
+        return repository.buscarDetalhesProcessoFrontEnd(processoId);
+    }
 }

@@ -34,21 +34,22 @@ public class ProcessoDashboardRepository {
         StringBuilder sql = new StringBuilder("""
                 SELECT
                     p.id,
-                    p.operador_id,
-                    p.conjunto_id,
-                    p.orgao_id,
-                    p.ano_safra,
-                    p.epsg_origem,
-                    p.etapa_atual_id,
-                    e.nome AS etapa,
-                    p.situacao_atual_id,
-                    s.nome AS situacao,
+                    c.nome AS dataset,
+                    e.nome AS stage,
+                    s.nome AS status,
+                    o.nome AS source,
+                    p.ano_safra AS year,
+                    p.epsg_origem AS epsg,
                     p.data_criacao
                 FROM processo p
                 LEFT JOIN etapa e
                     ON e.id = p.etapa_atual_id
                 LEFT JOIN situacao s
                     ON s.id = p.situacao_atual_id
+                LEFT JOIN conjunto c
+                    ON c.id = p.conjunto_id
+                LEFT JOIN orgao o
+                    ON o.id = p.orgao_id
                 WHERE 1 = 1
                 """);
 
@@ -113,23 +114,91 @@ public class ProcessoDashboardRepository {
         );
     }
 
+    public com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse buscarDetalhesProcessoFrontEnd(Long processoId) {
+        String sql = """
+                SELECT
+                    p.id,
+                    c.nome AS dataset,
+                    e.nome AS stage,
+                    s.nome AS status,
+                    p.data_criacao,
+                    a.nome_original AS layerName,
+                    o.nome AS source,
+                    p.ano_safra AS year,
+                    p.epsg_origem AS epsg,
+                    a.hash_sha256 AS integrityHash,
+                    a.url_armazenamento AS originalFileUrl
+                FROM processo p
+                LEFT JOIN etapa e ON e.id = p.etapa_atual_id
+                LEFT JOIN situacao s ON s.id = p.situacao_atual_id
+                LEFT JOIN conjunto c ON c.id = p.conjunto_id
+                LEFT JOIN orgao o ON o.id = p.orgao_id
+                LEFT JOIN arquivo_original a ON a.processo_id = p.id
+                WHERE p.id = :processoId
+                LIMIT 1
+                """;
+
+        Query query = entityManager.createNativeQuery(sql);
+        query.setParameter("processoId", processoId);
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> resultados = query.getResultList();
+
+        if (resultados.isEmpty()) {
+            return null;
+        }
+
+        Object[] resultado = resultados.get(0);
+        
+        LocalDateTime data = toLocalDateTime(resultado[4]);
+        String dateTime = "";
+        if (data != null) {
+             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+             dateTime = data.format(formatter);
+        }
+
+        return com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse.builder()
+                .id(resultado[0] != null ? resultado[0].toString() : null)
+                .dataset(resultado[1] != null ? resultado[1].toString() : null)
+                .stage(resultado[2] != null ? resultado[2].toString() : null)
+                .status(resultado[3] != null ? resultado[3].toString() : null)
+                .dateTime(dateTime)
+                .layerName(resultado[5] != null ? resultado[5].toString() : null)
+                .source(resultado[6] != null ? resultado[6].toString() : null)
+                .year(resultado[7] != null ? resultado[7].toString() : null)
+                .epsg(resultado[8] != null ? resultado[8].toString() : null)
+                .integrityHash(resultado[9] != null ? resultado[9].toString() : null)
+                .originalFileUrl(resultado[10] != null ? resultado[10].toString() : null)
+                .description("Sem descrição")
+                .mapCoordinates(new ArrayList<>())
+                .logs(new java.util.HashMap<>())
+                .validationChecks(new ArrayList<>())
+                .treatmentChecks(new ArrayList<>())
+                .analyticsData(new ArrayList<>())
+                .build();
+    }
+
     private ProcessoDashboardResponse mapearProcesso(
             Object[] resultado) {
 
+        LocalDateTime data = toLocalDateTime(resultado[7]);
+        String dateTime = "";
+        if (data != null) {
+             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+             dateTime = data.format(formatter);
+        }
+
         return new ProcessoDashboardResponse(
-                toLong(resultado[0]),
-                toLong(resultado[1]),
-                toLong(resultado[2]),
-                toLong(resultado[3]),
-                resultado[4] != null
-                        ? resultado[4].toString()
-                        : null,
-                resultado[5] != null
-                        ? resultado[5].toString()
-                        : null,
-                toLong(resultado[6]),
-                toLong(resultado[8]),
-                toLocalDateTime(resultado[10])
+                resultado[0] != null ? resultado[0].toString() : null,
+                dateTime,
+                resultado[1] != null ? resultado[1].toString() : null,
+                resultado[2] != null ? resultado[2].toString() : null,
+                resultado[3] != null ? resultado[3].toString() : null,
+                resultado[4] != null ? resultado[4].toString() : null,
+                resultado[5] != null ? resultado[5].toString() : null,
+                resultado[6] != null ? resultado[6].toString() : null,
+                null,
+                null
         );
     }
 
