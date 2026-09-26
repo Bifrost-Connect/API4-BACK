@@ -1,11 +1,14 @@
 package com.bifrostconnect.api_geo.service;
 
+import java.time.LocalDateTime;
+
+import org.springframework.stereotype.Service;
+
 import com.bifrostconnect.api_geo.entity.Auditoria;
 import com.bifrostconnect.api_geo.entity.LogProcessamento;
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.AuditoriaRepository;
 import com.bifrostconnect.api_geo.repository.LogProcessamentoRepository;
-import org.springframework.stereotype.Service;
 
 @Service
 public class AuditoriaLogService {
@@ -20,9 +23,19 @@ public class AuditoriaLogService {
 
     public void registrarLog(Processo processo, String nivel, String mensagem) {
         LogProcessamento log = new LogProcessamento();
-        log.setProcesso(processo);
+        
+        if (processo != null) {
+            log.setProcessoId(processo.getId());
+            
+            // Atribui o etapaAtualId ou fallback para 1L para evitar erro NOT NULL na FK
+            Long etapaId = (processo.getEtapaAtualId() != null) ? processo.getEtapaAtualId() : 1L;
+            log.setProcessoEtapaId(etapaId);
+        }
+
         log.setNivel(nivel);
         log.setMensagem(mensagem);
+        log.setDataHora(LocalDateTime.now());
+
         logRepository.save(log);
     }
 
@@ -31,6 +44,8 @@ public class AuditoriaLogService {
         auditoria.setUsuarioId(usuarioId);
         auditoria.setAcao(acao);
         auditoria.setDetalhes(detalhes);
+        auditoria.setDataHora(LocalDateTime.now());
+
         auditoriaRepository.save(auditoria);
     }
 }

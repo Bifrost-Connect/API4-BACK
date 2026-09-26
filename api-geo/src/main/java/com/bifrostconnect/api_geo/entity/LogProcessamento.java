@@ -1,43 +1,36 @@
 package com.bifrostconnect.api_geo.entity;
 
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.Data;
 
 @Entity
 @Table(name = "log_processamento")
+@Data
 public class LogProcessamento {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "processo_id", nullable = false)
-    private Processo processo;
+    @Column(name = "processo_id", nullable = false)
+    private Long processoId;
 
-    @Column(nullable = false, length = 20)
+    @Column(name = "processo_etapa_id", nullable = false)
+    private Long processoEtapaId;
+
+    @Column(name = "nivel", nullable = false)
     private String nivel;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
+    @Column(name = "mensagem", nullable = false)
     private String mensagem;
 
     @Column(name = "data_hora", nullable = false)
-    private LocalDateTime dataHora = LocalDateTime.now();
-
-    public LogProcessamento() {}
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-
-    public Processo getProcesso() { return processo; }
-    public void setProcesso(Processo processo) { this.processo = processo; }
-
-    public String getNivel() { return nivel; }
-    public void setNivel(String nivel) { this.nivel = nivel; }
-
-    public String getMensagem() { return mensagem; }
-    public void setMensagem(String mensagem) { this.mensagem = mensagem; }
-
-    public LocalDateTime getDataHora() { return dataHora; }
-    public void setDataHora(LocalDateTime dataHora) { this.dataHora = dataHora; }
+    private LocalDateTime dataHora;
 }
