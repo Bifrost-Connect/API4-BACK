@@ -3,6 +3,7 @@ package com.bifrostconnect.api_geo.controller;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +22,7 @@ import org.springframework.web.context.WebApplicationContext;
 
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
+import com.bifrostconnect.api_geo.service.ProcessoService;
 import com.bifrostconnect.api_geo.service.ValidacaoService;
 
 @SpringBootTest
@@ -41,51 +43,68 @@ class ArquivoControllerTest {
     @Autowired
     private ValidacaoService validacaoService;
 
+    @Autowired
+    private ProcessoService processoService;
+
     private Long processoId;
 
-    @SuppressWarnings("unused")
     @BeforeEach
     void setUp() {
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
 
-        // 1. Insere o Órgão com ID 1
+        // 1. Carga do domínio basilar
+        jdbcTemplate.update("""
+            INSERT INTO etapa (id, nome, ordem, descricao) 
+            VALUES (1, 'CARGA_E_VALIDACAO', 1, 'Etapa de entrada de dados') 
+            ON CONFLICT (id) DO NOTHING;
+        """);
+
         jdbcTemplate.update("""
             INSERT INTO orgao (id, nome, sigla, ativo) 
             VALUES (1, 'Órgão Teste', 'OT', true) 
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        // 2. Insere o Conjunto com ID 1
         jdbcTemplate.update("""
             INSERT INTO conjunto (id, nome, ativo) 
             VALUES (1, 'Conjunto Teste', true) 
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        // 3. Insere o Perfil com ID 1
         jdbcTemplate.update("""
             INSERT INTO perfil (id, nome, descricao) 
             VALUES (1, 'OPERADOR', 'Responsavel pela entrada das cargas') 
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        // 4. Insere o Usuário com ID 1
         jdbcTemplate.update("""
             INSERT INTO usuario (id, nome, email, senha_hash, perfil_id, ativo) 
             VALUES (1, 'Operador Teste', 'teste@bifrostconnect.com', 'hash_exemplo', 1, true) 
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        // 5. Cria o processo com as dependências satisfeitas
+        // 2. Persiste o processo
         Processo processo = new Processo();
         processo.setOrgaoId(1L);
         processo.setOperadorId(1L);
         processo.setConjuntoId(1L);
+        processo.setSituacaoAtualId(1L);
         processo.setAnoSafra("2025");
         processo.setEpsgOrigem("4326");
 
         Processo processoSalvo = processoRepository.save(processo);
         this.processoId = processoSalvo.getId();
+
+        // 3. Insere a entrada da tabela processo_etapa (necessária para satisfazer FK de log_processamento)
+        jdbcTemplate.update("""
+            INSERT INTO processo_etapa (id, processo_id, etapa_id, situacao_id, data_inicio) 
+            VALUES (1, ?, 1, 1, NOW()) 
+            ON CONFLICT (id) DO NOTHING;
+        """, this.processoId);
+
+        // Associa o ID da etapa criada
+        processoSalvo.setEtapaAtualId(1L);
+        processoRepository.save(processoSalvo);
     }
 
     @Test
@@ -105,8 +124,6 @@ class ArquivoControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.sucesso").value(true))
                 .andExpect(jsonPath("$.mensagem").value("Carga realizada na Zona Bruta com sucesso!"))
-
-                // Validações da Tarefa 2: Garante que o Hash e o ID são retornados no JSON
                 .andExpect(jsonPath("$.hash_sha256").exists())
                 .andExpect(jsonPath("$.id_arquivo").exists());
     }
@@ -147,6 +164,28 @@ class ArquivoControllerTest {
 
         assertTrue(valido, "A validação do motor espacial deve passar sem sobreposições prévias.");
 
-        Files.deleteIfExists(arquivoTemp);
+        Files.deleteIfExists(arquivoTemp);  
+    }
+
+    @Test
+    @DisplayName("Tarefa 2 (Gatilho Quarentena): Deve alterar situacaoAtualId para 4 (FALHOU/Quarentena) ao falhar validação")
+    void deveMoverParaQuarentenaQuandoValidacaoFalhar() throws Exception {
+        Long situacaoQuarentenaEsperada = 4L; // ID 4 = FALHOU
+
+        Path arquivoInvalido = Files.createTempFile("arquivo_invalido", ".txt");
+        Files.writeString(arquivoInvalido, "Conteudo invalido para geojson");
+
+        Processo processo = processoRepository.findById(processoId).orElseThrow();
+
+        Processo processoResultado = processoService.processarArquivo(
+                processo, 
+                "arquivo_invalido.txt", 
+                arquivoInvalido, 
+                1L
+        );
+
+        assertEquals(situacaoQuarentenaEsperada, processoResultado.getSituacaoAtualId());
+
+        Files.deleteIfExists(arquivoInvalido);
     }
 }

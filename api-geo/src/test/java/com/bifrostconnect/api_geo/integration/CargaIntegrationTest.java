@@ -107,4 +107,16 @@ public class CargaIntegrationTest {
         mockMvc.perform(get("/processos"))
                 .andExpect(status().isOk());
     }
+
+    /*@Test
+    @DisplayName("Tarefa 2: Deve alterar situacao_atual_id no banco para Quarentena após processar arquivo inválido")
+    public void deveAtualizarBancoParaQuarentena() throws Exception {
+        // Executa a requisição de processamento passando um arquivo com falhas
+        mockMvc.perform(post("/processos/1/processar")
+                        .param("nomeArquivo", "arquivo_com_erro.zip")
+                        .param("usuarioId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.situacaoAtualId").value(3)); // 3 = QUARENTENA
+    }*/
+
 }
