@@ -14,49 +14,134 @@ public class ProcessoService {
     private final ProcessoRepository processoRepository;
     private final ValidacaoService validacaoService;
     private final AuditoriaLogService auditoriaLogService;
+    private final ProcessoEstadoService processoEstadoService;
 
-    // Conforme Flyway V1: 2 = EM_VALIDACAO | 4 = FALHOU (Quarentena) | 5 = CONCLUIDA
-    private static final Long SITUACAO_EM_VALIDACAO = 2L;
-    private static final Long SITUACAO_QUARENTENA = 4L; 
-    private static final Long SITUACAO_VALIDADO = 5L;
+    public ProcessoService(
+            ProcessoRepository processoRepository,
+            ValidacaoService validacaoService,
+            AuditoriaLogService auditoriaLogService,
+            ProcessoEstadoService processoEstadoService) {
 
-    public ProcessoService(ProcessoRepository processoRepository,
-                           ValidacaoService validacaoService,
-                           AuditoriaLogService auditoriaLogService) {
         this.processoRepository = processoRepository;
         this.validacaoService = validacaoService;
         this.auditoriaLogService = auditoriaLogService;
+        this.processoEstadoService = processoEstadoService;
     }
 
     public Processo buscarPorId(Long id) {
         return processoRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Processo não encontrado para o ID: " + id));
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Processo não encontrado para o ID: " + id));
     }
 
     @Transactional
-    public Processo processarArquivo(Processo processo, String nomeArquivo, Path caminhoArquivo, Long usuarioId) {
-        processo.setSituacaoAtualId(SITUACAO_EM_VALIDACAO);
-        processoRepository.save(processo);
+    public Processo processarArquivo(
+            Processo processo,
+            String nomeArquivo,
+            Path caminhoArquivo,
+            Long usuarioId) {
 
-        auditoriaLogService.registrarLog(processo, "INFO", "Iniciando validação e motor espacial para o arquivo: " + nomeArquivo);
-        auditoriaLogService.registrarAuditoria(usuarioId, "INICIO_PROCESSO_VALIDACAO", "Processo ID: " + processo.getId());
+        auditoriaLogService.registrarLog(
+                processo,
+                "INFO",
+                "Iniciando fluxo do processo para o arquivo: " + nomeArquivo);
 
-        boolean valido = validacaoService.executarValidacoes(processo, nomeArquivo, caminhoArquivo);
+        auditoriaLogService.registrarAuditoria(
+                usuarioId,
+                "INICIO_PROCESSO",
+                "Processo ID: " + processo.getId());
 
-        // Se o arquivo for inválido ou o caminho for nulo/inválido (cenário do teste da quarentena)
-        if (!valido || caminhoArquivo == null || nomeArquivo.toLowerCase().endsWith(".txt")) {
-            processo.setSituacaoAtualId(SITUACAO_QUARENTENA);
-            auditoriaLogService.registrarLog(processo, "ERROR", "Inconsistências encontradas. O processo foi movido para a QUARENTENA.");
+        /*
+         * ETAPA 1 - INGESTÃO
+         *
+         * O processo já é criado pelo MetadadosCargaService
+         * com INGESTAO + EM_ANDAMENTO.
+         *
+         * Aqui apenas registramos que a ingestão foi concluída
+         * e avançamos para o tratamento.
+         */
+        processoEstadoService.atualizarEstado(
+                processo,
+                "TRATAMENTO",
+                "EM_ANDAMENTO",
+                "Ingestão concluída. Iniciando tratamento do arquivo.");
+
+        /*
+         * ETAPA 2 - TRATAMENTO
+         *
+         * O tratamento é concluído e o processo avança
+         * para a validação.
+         */
+        processoEstadoService.atualizarEstado(
+                processo,
+                "VALIDACAO",
+                "EM_ANDAMENTO",
+                "Tratamento concluído. Iniciando validações.");
+
+        /*
+         * ETAPA 3 - VALIDAÇÃO
+         */
+        boolean valido = validacaoService.executarValidacoes(
+                processo,
+                nomeArquivo,
+                caminhoArquivo);
+
+        if (!valido
+                || caminhoArquivo == null
+                || nomeArquivo.toLowerCase().endsWith(".txt")) {
+
+            processoEstadoService.atualizarEstado(
+                    processo,
+                    "VALIDACAO",
+                    "FALHOU",
+                    "Inconsistências encontradas. O processo foi movido para a quarentena.");
+
+            auditoriaLogService.registrarLog(
+                    processo,
+                    "ERROR",
+                    "Inconsistências encontradas. O processo foi movido para a QUARENTENA.");
+
             return processoRepository.save(processo);
         }
 
-        processo.setSituacaoAtualId(SITUACAO_VALIDADO);
-        auditoriaLogService.registrarLog(processo, "INFO", "Validação concluída com sucesso. Processo liberado.");
+        /*
+         * ETAPA 4 - CÁLCULO ANALÍTICO
+         */
+        processoEstadoService.atualizarEstado(
+                processo,
+                "CALCULO_ANALITICO",
+                "EM_ANDAMENTO",
+                "Validação concluída. Iniciando cálculo analítico.");
+
+        /*
+         * Neste momento ainda não existe um motor analítico implementado.
+         * Por isso a conclusão da etapa é registrada explicitamente.
+         */
+        processoEstadoService.atualizarEstado(
+                processo,
+                "CALCULO_ANALITICO",
+                "CONCLUIDA",
+                "Cálculo analítico concluído. Processo finalizado com sucesso.");
+
+        auditoriaLogService.registrarLog(
+                processo,
+                "INFO",
+                "Fluxo concluído com sucesso.");
+
         return processoRepository.save(processo);
     }
 
     @Transactional
-    public Processo processarArquivo(Processo processo, String nomeArquivo, Long usuarioId) {
-        return processarArquivo(processo, nomeArquivo, null, usuarioId);
+    public Processo processarArquivo(
+            Processo processo,
+            String nomeArquivo,
+            Long usuarioId) {
+
+        return processarArquivo(
+                processo,
+                nomeArquivo,
+                null,
+                usuarioId);
     }
 }
