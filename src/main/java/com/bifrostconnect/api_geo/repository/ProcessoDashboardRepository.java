@@ -1,10 +1,13 @@
 package com.bifrostconnect.api_geo.repository;
 
 import com.bifrostconnect.api_geo.dto.LogEspacialResponse;
+import com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse;
 import com.bifrostconnect.api_geo.dto.ProcessoDashboardResponse;
+
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -12,6 +15,7 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -66,9 +70,7 @@ public class ProcessoDashboardRepository {
                 ORDER BY p.data_criacao DESC
                 """);
 
-        Query query = entityManager.createNativeQuery(
-                sql.toString()
-        );
+        Query query = entityManager.createNativeQuery(sql.toString());
 
         adicionarParametros(
                 query,
@@ -114,7 +116,9 @@ public class ProcessoDashboardRepository {
         );
     }
 
-    public com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse buscarDetalhesProcessoFrontEnd(Long processoId) {
+    public ProcessLogDetailsResponse buscarDetalhesProcessoFrontEnd(
+            Long processoId) {
+
         String sql = """
                 SELECT
                     p.id,
@@ -129,17 +133,26 @@ public class ProcessoDashboardRepository {
                     a.hash_sha256 AS integrityHash,
                     a.url_armazenamento AS originalFileUrl
                 FROM processo p
-                LEFT JOIN etapa e ON e.id = p.etapa_atual_id
-                LEFT JOIN situacao s ON s.id = p.situacao_atual_id
-                LEFT JOIN conjunto c ON c.id = p.conjunto_id
-                LEFT JOIN orgao o ON o.id = p.orgao_id
-                LEFT JOIN arquivo_original a ON a.processo_id = p.id
+                LEFT JOIN etapa e
+                    ON e.id = p.etapa_atual_id
+                LEFT JOIN situacao s
+                    ON s.id = p.situacao_atual_id
+                LEFT JOIN conjunto c
+                    ON c.id = p.conjunto_id
+                LEFT JOIN orgao o
+                    ON o.id = p.orgao_id
+                LEFT JOIN arquivo_original a
+                    ON a.processo_id = p.id
                 WHERE p.id = :processoId
                 LIMIT 1
                 """;
 
         Query query = entityManager.createNativeQuery(sql);
-        query.setParameter("processoId", processoId);
+
+        query.setParameter(
+                "processoId",
+                processoId
+        );
 
         @SuppressWarnings("unchecked")
         List<Object[]> resultados = query.getResultList();
@@ -149,58 +162,143 @@ public class ProcessoDashboardRepository {
         }
 
         Object[] resultado = resultados.get(0);
-        
+
         LocalDateTime data = toLocalDateTime(resultado[4]);
+
         String dateTime = "";
+
         if (data != null) {
-             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-             dateTime = data.format(formatter);
+            DateTimeFormatter formatter =
+                    DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+            dateTime = data.format(formatter);
         }
 
-        // Busca os logs reais utilizando o método já existente na classe
-        List<LogEspacialResponse> logsEspaciais = buscarLogEspacial(processoId);
+        List<LogEspacialResponse> logsEspaciais =
+                buscarLogEspacial(processoId);
 
-        return com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse.builder()
-                .id(resultado[0] != null ? resultado[0].toString() : null)
-                .dataset(resultado[1] != null ? resultado[1].toString() : null)
-                .stage(resultado[2] != null ? resultado[2].toString() : null)
-                .status(resultado[3] != null ? resultado[3].toString() : null)
+        Map<String, List<String>> logs =
+                transformarLogs(logsEspaciais);
+
+        return ProcessLogDetailsResponse.builder()
+                .id(
+                        resultado[0] != null
+                                ? resultado[0].toString()
+                                : null
+                )
+                .dataset(
+                        resultado[1] != null
+                                ? resultado[1].toString()
+                                : null
+                )
+                .stage(
+                        resultado[2] != null
+                                ? resultado[2].toString()
+                                : null
+                )
+                .status(
+                        resultado[3] != null
+                                ? resultado[3].toString()
+                                : null
+                )
                 .dateTime(dateTime)
-                .layerName(resultado[5] != null ? resultado[5].toString() : null)
-                .source(resultado[6] != null ? resultado[6].toString() : null)
-                .year(resultado[7] != null ? resultado[7].toString() : null)
-                .epsg(resultado[8] != null ? resultado[8].toString() : null)
-                .integrityHash(resultado[9] != null ? resultado[9].toString() : null)
-                .originalFileUrl(resultado[10] != null ? resultado[10].toString() : null)
-                .description("Detalhes carregados com sucesso")
-                .mapCoordinates(new ArrayList<>())
-                .logs(logsEspaciais) // Preenchido com os logs reais buscados do banco
-                .validationChecks(new ArrayList<>())
-                .treatmentChecks(new ArrayList<>())
-                .analyticsData(new ArrayList<>())
+                .layerName(
+                        resultado[5] != null
+                                ? resultado[5].toString()
+                                : null
+                )
+                .source(
+                        resultado[6] != null
+                                ? resultado[6].toString()
+                                : null
+                )
+                .year(
+                        resultado[7] != null
+                                ? resultado[7].toString()
+                                : null
+                )
+                .epsg(
+                        resultado[8] != null
+                                ? resultado[8].toString()
+                                : null
+                )
+                .integrityHash(
+                        resultado[9] != null
+                                ? resultado[9].toString()
+                                : null
+                )
+                .originalFileUrl(
+                        resultado[10] != null
+                                ? resultado[10].toString()
+                                : null
+                )
+                .description(
+                        "Detalhes carregados com sucesso"
+                )
+                .mapCoordinates(
+                        new ArrayList<>()
+                )
+                .logs(logs)
+                .validationChecks(
+                        new ArrayList<>()
+                )
+                .treatmentChecks(
+                        new ArrayList<>()
+                )
+                .analyticsData(
+                        new ArrayList<>()
+                )
                 .build();
     }
 
     private ProcessoDashboardResponse mapearProcesso(
             Object[] resultado) {
 
-        LocalDateTime data = toLocalDateTime(resultado[7]);
+        LocalDateTime data =
+                toLocalDateTime(resultado[7]);
+
         String dateTime = "";
+
         if (data != null) {
-             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-             dateTime = data.format(formatter);
+            DateTimeFormatter formatter =
+                    DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+            dateTime = data.format(formatter);
         }
 
         return new ProcessoDashboardResponse(
-                resultado[0] != null ? resultado[0].toString() : null,
+                resultado[0] != null
+                        ? resultado[0].toString()
+                        : null,
+
                 dateTime,
-                resultado[1] != null ? resultado[1].toString() : null,
-                resultado[2] != null ? resultado[2].toString() : null,
-                resultado[3] != null ? resultado[3].toString() : null,
-                resultado[4] != null ? resultado[4].toString() : null,
-                resultado[5] != null ? resultado[5].toString() : null,
-                resultado[6] != null ? resultado[6].toString() : null,
+
+                resultado[1] != null
+                        ? resultado[1].toString()
+                        : null,
+
+                resultado[2] != null
+                        ? resultado[2].toString()
+                        : null,
+
+                resultado[3] != null
+                        ? resultado[3].toString()
+                        : null,
+
+                resultado[4] != null
+                        ? resultado[4].toString()
+                        : null,
+
+                resultado[5] != null
+                        ? resultado[5].toString()
+                        : null,
+
+                resultado[6] != null
+                        ? resultado[6].toString()
+                        : null,
+
                 null,
+
                 null
         );
     }
@@ -406,9 +504,10 @@ public class ProcessoDashboardRepository {
 
             Object[] linha = (Object[]) item;
 
-            String nome = linha[0] != null
-                    ? linha[0].toString()
-                    : null;
+            String nome =
+                    linha[0] != null
+                            ? linha[0].toString()
+                            : null;
 
             Number quantidade =
                     (Number) linha[1];
@@ -499,6 +598,45 @@ public class ProcessoDashboardRepository {
         return logs;
     }
 
+    private Map<String, List<String>> transformarLogs(
+            List<LogEspacialResponse> logs) {
+
+        Map<String, List<String>> resultado =
+                new LinkedHashMap<>();
+
+        for (LogEspacialResponse log : logs) {
+
+            String chave;
+
+            if (log.etapa() != null && !log.etapa().isBlank()) {
+                chave = log.etapa();
+            } else if (log.situacao() != null && !log.situacao().isBlank()) {
+                chave = log.situacao();
+            } else {
+                chave = "GERAL";
+            }
+
+            String mensagem = log.mensagem();
+
+            if (mensagem == null || mensagem.isBlank()) {
+                mensagem = log.detalhes();
+            }
+
+            if (mensagem == null || mensagem.isBlank()) {
+                mensagem = "";
+            }
+
+            resultado
+                    .computeIfAbsent(
+                            chave,
+                            key -> new ArrayList<>()
+                    )
+                    .add(mensagem);
+        }
+
+        return resultado;
+    }
+
     private Long toLong(Object valor) {
 
         if (valor == null) {
@@ -534,3 +672,4 @@ public class ProcessoDashboardRepository {
         return null;
     }
 }
+

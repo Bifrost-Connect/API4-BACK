@@ -36,30 +36,35 @@ public class ProcessoService {
                                 "Processo não encontrado para o ID: " + id));
     }
 
-    // --- TAREFA 5: Método para listar os analistas/auditores reais ---
     public List<?> listarAuditoresReais() {
-        // Como o projeto utiliza uma estrutura focada em processos e estados, 
-        // caso possua um repositório de usuários, injete-o aqui. 
-        // Exemplo: return usuarioRepository.findByPerfil("ANALISTA");
-        // Se os usuários estiverem associados por log/auditoria, adapte conforme a entity existente.
-        return List.of(); 
+        return List.of();
     }
 
-    // --- TAREFA 5: Método para alocar o editor e alterar a situação para EM_ANDAMENTO ---
     @Transactional
-    public Processo alocarEditorEAtualizarSituacao(Long processoId, Long editorId) {
+    public Processo alocarEditorEAtualizarSituacao(
+            Long processoId,
+            Long editorId) {
+
         Processo processo = buscarPorId(processoId);
 
-        // Associa o editor à carga (ajuste o método setter caso o nome na Entity seja diferente, ex: setEditorId)
-        processo.setEditorId(editorId);
+        /*
+         * A entidade Processo não possui editorId.
+         * Portanto, não alteramos a estrutura da entidade nem do banco.
+         *
+         * O editor recebido é mantido como parâmetro para preservar
+         * a assinatura utilizada pelo ProcessoController.
+         */
 
-        // Altera a situação de volta para "EM_ANDAMENTO" para que ele atue na correção da quarentena
-        processo.setSituacao("EM_ANDAMENTO");
+        processoEstadoService.atualizarEstado(
+                processo,
+                "TRATAMENTO",
+                "EM_ANDAMENTO",
+                "Processo alocado para processamento.");
 
         auditoriaLogService.registrarLog(
                 processo,
                 "INFO",
-                "Editor ID: " + editorId + " alocado para o processo. Retornado para EM_ANDAMENTO.");
+                "Processo colocado em andamento pelo editor ID: " + editorId);
 
         return processoRepository.save(processo);
     }

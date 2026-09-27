@@ -1,7 +1,16 @@
 package com.bifrostconnect.api_geo.controller;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,10 +36,11 @@ public class CargaController {
     private final ArquivoUploadService arquivoUploadService;
     private final AuditoriaLogService auditoriaLogService;
 
-    // Construtor atualizado com as dependências necessárias
-    public CargaController(MetadadosCargaService metadadosCargaService,
-                           ArquivoUploadService arquivoUploadService,
-                           AuditoriaLogService auditoriaLogService) {
+    public CargaController(
+            MetadadosCargaService metadadosCargaService,
+            ArquivoUploadService arquivoUploadService,
+            AuditoriaLogService auditoriaLogService) {
+
         this.metadadosCargaService = metadadosCargaService;
         this.arquivoUploadService = arquivoUploadService;
         this.auditoriaLogService = auditoriaLogService;
@@ -41,44 +51,168 @@ public class CargaController {
     public ResponseEntity<Processo> cadastrarMetadados(
             @Valid @RequestBody MetadadosCargaRequest request) {
 
-        Processo processoSalvo = metadadosCargaService.salvarMetadados(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(processoSalvo);
+        Processo processoSalvo =
+                metadadosCargaService.salvarMetadados(request);
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(processoSalvo);
     }
 
-    // Tarefa 4, 5 e 7: Recebe o arquivo, realiza o upload e registra na auditoria
+    // Tarefa 4, 5 e 7: Recebe o arquivo, realiza o upload e registra na auditoria.
     @PostMapping("/upload")
     public ResponseEntity<?> uploadArquivo(
             @RequestParam("processoId") Long processoId,
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
+            @RequestParam(
+                    value = "usuarioId",
+                    required = false,
+                    defaultValue = "1") Long usuarioId) {
 
         if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body("O arquivo enviado está vazio.");
+            return ResponseEntity
+                    .badRequest()
+                    .body("O arquivo enviado está vazio.");
         }
 
         String nomeArquivo = file.getOriginalFilename();
-        if (nomeArquivo == null || (!nomeArquivo.toLowerCase().endsWith(".zip") && !nomeArquivo.toLowerCase().endsWith(".geojson"))) {
-            throw new UnsupportedFileFormatException("Formato de arquivo não permitido. Envie apenas arquivos .zip ou .geojson.");
+
+        if (nomeArquivo == null
+                || (!nomeArquivo.toLowerCase().endsWith(".zip")
+                && !nomeArquivo.toLowerCase().endsWith(".geojson"))) {
+
+            throw new UnsupportedFileFormatException(
+                    "Formato de arquivo não permitido. "
+                    + "Envie apenas arquivos .zip ou .geojson.");
         }
 
         try {
-            ArquivoOriginal arquivoSalvo = arquivoUploadService.processarUpload(processoId, file);
 
-            // Tarefa 7: Registro do evento de auditoria após upload bem-sucedido
+            ArquivoOriginal arquivoSalvo =
+                    arquivoUploadService.processarUpload(
+                            processoId,
+                            file);
+
+            // Tarefa 7: Registro do evento de auditoria após upload bem-sucedido.
             auditoriaLogService.registrarAuditoria(
                     usuarioId,
                     "UPLOAD_ARQUIVO",
-                    "Upload realizado com sucesso para o Processo ID: " + processoId + ", Arquivo: " + nomeArquivo
+                    "Upload realizado com sucesso para o Processo ID: "
+                            + processoId
+                            + ", Arquivo: "
+                            + nomeArquivo
             );
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(arquivoSalvo);
+            return ResponseEntity
+                    .status(HttpStatus.CREATED)
+                    .body(arquivoSalvo);
+
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(e.getMessage());
+
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
-            return ResponseEntity.badRequest().body("Este arquivo já foi processado anteriormente (Arquivo duplicado detectado pelo Hash SHA-256).");
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            "Este arquivo já foi processado anteriormente "
+                            + "(Arquivo duplicado detectado pelo Hash SHA-256)."
+                    );
+
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Erro ao processar o upload do arquivo: " + e.getMessage());
+
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(
+                            "Erro ao processar o upload do arquivo: "
+                            + e.getMessage()
+                    );
+        }
+    }
+
+    /*
+     * Download do arquivo original.
+     *
+     * GET /carga/download/{processoId}
+     */
+    @GetMapping("/download/{processoId}")
+    public ResponseEntity<Resource> baixarArquivoOriginal(
+            @PathVariable Long processoId) {
+
+        try {
+
+            // Localiza o registro do arquivo original associado ao processo.
+            ArquivoOriginal arquivo =
+                    arquivoUploadService
+                            .buscarArquivoOriginalPorProcesso(processoId);
+
+            // Abre o arquivo físico armazenado no disco.
+            Resource resource =
+                    arquivoUploadService
+                            .abrirArquivoParaDownload(arquivo);
+
+            // Obtém o tamanho real do arquivo físico.
+            long tamanho =
+                    arquivoUploadService
+                            .obterTamanhoArquivo(arquivo);
+
+            // Define o tipo MIME.
+            MediaType mediaType =
+                    MediaType.APPLICATION_OCTET_STREAM;
+
+            if (arquivo.getTipoMime() != null
+                    && !arquivo.getTipoMime().isBlank()) {
+
+                try {
+                    mediaType =
+                            MediaType.parseMediaType(
+                                    arquivo.getTipoMime());
+                } catch (Exception ignored) {
+                    // Mantém application/octet-stream.
+                }
+            }
+
+            // Mantém o nome original do arquivo no download.
+            ContentDisposition contentDisposition =
+                    ContentDisposition
+                            .attachment()
+                            .filename(
+                                    arquivo.getNomeOriginal(),
+                                    StandardCharsets.UTF_8)
+                            .build();
+
+            // Retorna o arquivo para o Front-end.
+            return ResponseEntity
+                    .ok()
+                    .contentType(mediaType)
+                    .contentLength(tamanho)
+                    .header(
+                            HttpHeaders.CONTENT_DISPOSITION,
+                            contentDisposition.toString())
+                    .body(resource);
+
+        } catch (IllegalArgumentException e) {
+
+            // Processo ou arquivo não encontrado.
+            return ResponseEntity
+                    .notFound()
+                    .build();
+
+        } catch (IOException e) {
+
+            // Arquivo físico não encontrado.
+            return ResponseEntity
+                    .notFound()
+                    .build();
+
+        } catch (Exception e) {
+
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .build();
         }
     }
 }
