@@ -1,11 +1,11 @@
 package com.bifrostconnect.api_geo.controller;
 
-import com.bifrostconnect.api_geo.dto.LogEspacialResponse;
-import com.bifrostconnect.api_geo.dto.ProcessoDashboardResponse;
-import com.bifrostconnect.api_geo.dto.ProcessoMetricasResponse;
-import com.bifrostconnect.api_geo.entity.Processo;
-import com.bifrostconnect.api_geo.service.ProcessoDashboardService;
-import com.bifrostconnect.api_geo.service.ProcessoService;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -14,12 +14,21 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
-import java.util.List;
+import com.bifrostconnect.api_geo.dto.LogEspacialResponse;
+import com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse;
+import com.bifrostconnect.api_geo.dto.ProcessoDashboardResponse;
+import com.bifrostconnect.api_geo.dto.ProcessoMetricasResponse;
+import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
+import com.bifrostconnect.api_geo.entity.Processo;
+import com.bifrostconnect.api_geo.repository.ArquivoOriginalRepository;
+import com.bifrostconnect.api_geo.service.ProcessoDashboardService;
+import com.bifrostconnect.api_geo.service.ProcessoService;
 
 @RestController
 @RequestMapping("/processos")
@@ -27,19 +36,18 @@ public class ProcessoController {
 
     private final ProcessoService processoService;
     private final ProcessoDashboardService processoDashboardService;
+    private final ArquivoOriginalRepository arquivoOriginalRepository;
 
     public ProcessoController(
             ProcessoService processoService,
-            ProcessoDashboardService processoDashboardService) {
+            ProcessoDashboardService processoDashboardService,
+            ArquivoOriginalRepository arquivoOriginalRepository) {
 
         this.processoService = processoService;
         this.processoDashboardService = processoDashboardService;
+        this.arquivoOriginalRepository = arquivoOriginalRepository;
     }
 
-    /**
-     * Tarefa 1:
-     * Lista os processos com paginação e filtros.
-     */
     @GetMapping
     public ResponseEntity<Page<ProcessoDashboardResponse>> listarProcessos(
             @RequestParam(required = false) LocalDate dataInicio,
@@ -66,10 +74,6 @@ public class ProcessoController {
         return ResponseEntity.ok(processos);
     }
 
-    /**
-     * Tarefa 2:
-     * Retorna as métricas agregadas para o Dashboard.
-     */
     @GetMapping("/metricas")
     public ResponseEntity<ProcessoMetricasResponse> buscarMetricas() {
 
@@ -79,10 +83,25 @@ public class ProcessoController {
         return ResponseEntity.ok(metricas);
     }
 
-    /**
-     * Tarefa 3:
-     * Retorna o log completo disponível para o processo.
-     */
+    // --- TAREFA 5: Endpoint para listar auditores reais no modal de quarentena ---
+    @GetMapping("/usuarios/auditores")
+    public ResponseEntity<?> listarAuditores() {
+        // Delega para o service buscar os analistas/auditores cadastrados reais
+        return ResponseEntity.ok(processoService.listarAuditoresReais());
+    }
+
+    // --- TAREFA 5: Endpoint para associar o editor e alterar a situação para EM_ANDAMENTO ---
+    @PutMapping("/{id}/editor")
+    public ResponseEntity<Processo> alocarEditor(
+            @PathVariable Long id,
+            @RequestBody Map<String, Long> payload) {
+
+        Long editorId = payload.get("editorId");
+        Processo processoAtualizado = processoService.alocarEditorEAtualizarSituacao(id, editorId);
+
+        return ResponseEntity.ok(processoAtualizado);
+    }
+
     @GetMapping("/{id}/log-espacial")
     public ResponseEntity<List<LogEspacialResponse>> buscarLogEspacial(
             @PathVariable Long id) {
@@ -93,15 +112,12 @@ public class ProcessoController {
         return ResponseEntity.ok(logs);
     }
 
-    /**
-     * Retorna os detalhes completos do processo pelo ID mapeado exatamente
-     * para o que o frontend espera (ProcessLogDetails).
-     */
+    // --- TAREFA 6: Já estruturado para carregar logs, validações e dados detalhados ---
     @GetMapping("/{id}")
-    public ResponseEntity<com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse> buscarDetalhesProcesso(
+    public ResponseEntity<ProcessLogDetailsResponse> buscarDetalhesProcesso(
             @PathVariable Long id) {
 
-        com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse response = 
+        ProcessLogDetailsResponse response =
                 processoDashboardService.buscarDetalhesProcessoFrontEnd(id);
 
         if (response != null) {
@@ -111,12 +127,6 @@ public class ProcessoController {
         }
     }
 
-    /**
-     * Endpoints já existentes:
-     * Executa o processamento/validação do processo.
-     *
-     * Mantido sem alteração de comportamento.
-     */
     @PostMapping("/{id}/processar")
     public ResponseEntity<?> processarProcesso(
             @PathVariable Long id,
@@ -131,10 +141,21 @@ public class ProcessoController {
             Processo processo =
                     processoService.buscarPorId(id);
 
+            ArquivoOriginal arquivo =
+                    arquivoOriginalRepository
+                            .findFirstByProcessoIdOrderByIdDesc(id)
+                            .orElseThrow(() ->
+                                    new IllegalArgumentException(
+                                            "Nenhum arquivo encontrado para o processo: " + id));
+
+            Path caminhoArquivo =
+                    Paths.get(arquivo.getUrlArmazenamento());
+
             Processo processoAtualizado =
                     processoService.processarArquivo(
                             processo,
-                            nomeArquivo,
+                            arquivo.getNomeOriginal(),
+                            caminhoArquivo,
                             usuarioId
                     );
 

@@ -69,6 +69,7 @@ public class CargaIntegrationTest {
     @AfterEach
     public void tearDown() {
         if (processoTesteId != null) {
+            jdbcTemplate.update("DELETE FROM processo_etapa WHERE processo_id = ?", processoTesteId);
             jdbcTemplate.update("DELETE FROM processo WHERE id = ?", processoTesteId);
         }
         // Limpa os dados inseridos para não afetar outros testes
@@ -96,6 +97,8 @@ public class CargaIntegrationTest {
                         .content(jsonRequest))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").exists())
+                .andExpect(jsonPath("$.etapaAtualId").isNumber())
+                .andExpect(jsonPath("$.situacaoAtualId").isNumber())
                 .andReturn();
 
         // Extrai o ID do Processo retornado
