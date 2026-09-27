@@ -157,6 +157,9 @@ public class ProcessoDashboardRepository {
              dateTime = data.format(formatter);
         }
 
+        // Busca os logs reais utilizando o método já existente na classe
+        List<LogEspacialResponse> logsEspaciais = buscarLogEspacial(processoId);
+
         return com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse.builder()
                 .id(resultado[0] != null ? resultado[0].toString() : null)
                 .dataset(resultado[1] != null ? resultado[1].toString() : null)
@@ -169,9 +172,9 @@ public class ProcessoDashboardRepository {
                 .epsg(resultado[8] != null ? resultado[8].toString() : null)
                 .integrityHash(resultado[9] != null ? resultado[9].toString() : null)
                 .originalFileUrl(resultado[10] != null ? resultado[10].toString() : null)
-                .description("Sem descrição")
+                .description("Detalhes carregados com sucesso")
                 .mapCoordinates(new ArrayList<>())
-                .logs(new java.util.HashMap<>())
+                .logs(logsEspaciais) // Preenchido com os logs reais buscados do banco
                 .validationChecks(new ArrayList<>())
                 .treatmentChecks(new ArrayList<>())
                 .analyticsData(new ArrayList<>())

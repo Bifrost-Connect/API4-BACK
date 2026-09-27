@@ -1,6 +1,7 @@
 package com.bifrostconnect.api_geo.service;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +36,34 @@ public class ProcessoService {
                                 "Processo não encontrado para o ID: " + id));
     }
 
+    // --- TAREFA 5: Método para listar os analistas/auditores reais ---
+    public List<?> listarAuditoresReais() {
+        // Como o projeto utiliza uma estrutura focada em processos e estados, 
+        // caso possua um repositório de usuários, injete-o aqui. 
+        // Exemplo: return usuarioRepository.findByPerfil("ANALISTA");
+        // Se os usuários estiverem associados por log/auditoria, adapte conforme a entity existente.
+        return List.of(); 
+    }
+
+    // --- TAREFA 5: Método para alocar o editor e alterar a situação para EM_ANDAMENTO ---
+    @Transactional
+    public Processo alocarEditorEAtualizarSituacao(Long processoId, Long editorId) {
+        Processo processo = buscarPorId(processoId);
+
+        // Associa o editor à carga (ajuste o método setter caso o nome na Entity seja diferente, ex: setEditorId)
+        processo.setEditorId(editorId);
+
+        // Altera a situação de volta para "EM_ANDAMENTO" para que ele atue na correção da quarentena
+        processo.setSituacao("EM_ANDAMENTO");
+
+        auditoriaLogService.registrarLog(
+                processo,
+                "INFO",
+                "Editor ID: " + editorId + " alocado para o processo. Retornado para EM_ANDAMENTO.");
+
+        return processoRepository.save(processo);
+    }
+
     @Transactional
     public Processo processarArquivo(
             Processo processo,
@@ -52,36 +81,18 @@ public class ProcessoService {
                 "INICIO_PROCESSO",
                 "Processo ID: " + processo.getId());
 
-        /*
-         * ETAPA 1 - INGESTÃO
-         *
-         * O processo já é criado pelo MetadadosCargaService
-         * com INGESTAO + EM_ANDAMENTO.
-         *
-         * Aqui apenas registramos que a ingestão foi concluída
-         * e avançamos para o tratamento.
-         */
         processoEstadoService.atualizarEstado(
                 processo,
                 "TRATAMENTO",
                 "EM_ANDAMENTO",
                 "Ingestão concluída. Iniciando tratamento do arquivo.");
 
-        /*
-         * ETAPA 2 - TRATAMENTO
-         *
-         * O tratamento é concluído e o processo avança
-         * para a validação.
-         */
         processoEstadoService.atualizarEstado(
                 processo,
                 "VALIDACAO",
                 "EM_ANDAMENTO",
                 "Tratamento concluído. Iniciando validações.");
 
-        /*
-         * ETAPA 3 - VALIDAÇÃO
-         */
         boolean valido = validacaoService.executarValidacoes(
                 processo,
                 nomeArquivo,
@@ -105,19 +116,12 @@ public class ProcessoService {
             return processoRepository.save(processo);
         }
 
-        /*
-         * ETAPA 4 - CÁLCULO ANALÍTICO
-         */
         processoEstadoService.atualizarEstado(
                 processo,
                 "CALCULO_ANALITICO",
                 "EM_ANDAMENTO",
                 "Validação concluída. Iniciando cálculo analítico.");
 
-        /*
-         * Neste momento ainda não existe um motor analítico implementado.
-         * Por isso a conclusão da etapa é registrada explicitamente.
-         */
         processoEstadoService.atualizarEstado(
                 processo,
                 "CALCULO_ANALITICO",
