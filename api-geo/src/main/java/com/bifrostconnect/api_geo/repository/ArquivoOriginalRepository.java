@@ -11,4 +11,6 @@ public interface ArquivoOriginalRepository extends JpaRepository<ArquivoOriginal
     boolean existsByHashSha256(String hashSha256);
 
     Optional<ArquivoOriginal> findFirstByProcessoIdOrderByIdDesc(Long processoId);
+
+    Optional<ArquivoOriginal> findByProcessoId(Long processoId);
 }
