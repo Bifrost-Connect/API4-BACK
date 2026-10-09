@@ -15,9 +15,15 @@ import lombok.Data;
 @Data
 public class Processo {
 
+    private LocalDateTime dataCriacao;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    public LocalDateTime getDataCriacao() {
+    return dataCriacao;
+    }
 
     @Column(name = "ano_safra")
     private String anoSafra;
