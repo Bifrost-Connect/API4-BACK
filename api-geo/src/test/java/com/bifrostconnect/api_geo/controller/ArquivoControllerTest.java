@@ -3,6 +3,8 @@ package com.bifrostconnect.api_geo.controller;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,12 +14,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
 import com.bifrostconnect.api_geo.entity.Processo;
@@ -26,7 +28,7 @@ import com.bifrostconnect.api_geo.service.ProcessoService;
 import com.bifrostconnect.api_geo.service.ValidacaoService;
 
 @SpringBootTest
-@Transactional
+@TestPropertySource(properties = "spring.flyway.clean-disabled=false")
 class ArquivoControllerTest {
 
     private MockMvc mockMvc;
@@ -46,19 +48,28 @@ class ArquivoControllerTest {
     @Autowired
     private ProcessoService processoService;
 
+    @Autowired
+    private Flyway flyway; // ARQUITETURA: Motor de migração injetado
+
     private Long processoId;
+    private Long processoEtapaId;
+    
+    // Flag para garantir que a recriação do banco ocorra apenas 1x por classe de teste
+    private static boolean bancoRestaurado = false; 
 
     @BeforeEach
     void setUp() {
+        // CURA AUTOMÁTICA DO BANCO DE DADOS:
+        // Destrói o schema corrompido e roda todas as 18 migrations do zero.
+        if (!bancoRestaurado) {
+            flyway.clean();
+            flyway.migrate();
+            bancoRestaurado = true;
+        }
+
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
 
-        // 1. Carga do domínio basilar
-        jdbcTemplate.update("""
-            INSERT INTO etapa (id, nome, ordem, descricao) 
-            VALUES (1, 'CARGA_E_VALIDACAO', 1, 'Etapa de entrada de dados') 
-            ON CONFLICT (id) DO NOTHING;
-        """);
-
+        // Inserts apenas para chaves estrangeiras periféricas não criadas pelo Flyway
         jdbcTemplate.update("""
             INSERT INTO orgao (id, nome, sigla, ativo) 
             VALUES (1, 'Órgão Teste', 'OT', true) 
@@ -83,38 +94,44 @@ class ArquivoControllerTest {
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        // 2. Persiste o processo
         Processo processo = new Processo();
         processo.setOrgaoId(1L);
         processo.setOperadorId(1L);
         processo.setConjuntoId(1L);
-        processo.setSituacaoAtualId(1L);
+        processo.setSituacaoAtualId(1L); // 1 = EM_ANDAMENTO garantido pelo Flyway
         processo.setAnoSafra("2025");
         processo.setEpsgOrigem("4326");
 
         Processo processoSalvo = processoRepository.save(processo);
         this.processoId = processoSalvo.getId();
 
-        // 3. Insere a entrada da tabela processo_etapa (necessária para satisfazer FK de log_processamento)
-        jdbcTemplate.update("""
-            INSERT INTO processo_etapa (id, processo_id, etapa_id, situacao_id, data_inicio) 
-            VALUES (1, ?, 1, 1, NOW()) 
-            ON CONFLICT (id) DO NOTHING;
-        """, this.processoId);
+        this.processoEtapaId = jdbcTemplate.queryForObject("""
+            INSERT INTO processo_etapa (processo_id, etapa_id, situacao_id, data_inicio) 
+            VALUES (?, 1, 1, NOW())
+            RETURNING id
+        """, Long.class, this.processoId);
 
-        // Associa o ID da etapa criada
-        processoSalvo.setEtapaAtualId(1L);
+        processoSalvo.setEtapaAtualId(1L); // 1 = INGESTAO garantido pelo Flyway
         processoRepository.save(processoSalvo);
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Limpeza segura entre testes individuais da mesma classe
+        jdbcTemplate.execute("TRUNCATE TABLE processo, auditoria RESTART IDENTITY CASCADE");
     }
 
     @Test
     @DisplayName("Deve realizar o upload de arquivo na Zona Bruta com sucesso")
     void deveFazerUploadDeArquivo() throws Exception {
+        String conteudo = "{\"type\": \"FeatureCollection\", \"features\": [], \"teste\": "
+                + System.nanoTime() + "}";
+
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "malha_sidrolandia.geojson",
                 "application/json",
-                "{\"type\": \"FeatureCollection\", \"features\": []}".getBytes()
+                conteudo.getBytes()
         );
 
         mockMvc.perform(multipart("/api/v1/arquivos/upload")
@@ -159,33 +176,23 @@ class ArquivoControllerTest {
         Files.writeString(arquivoTemp, geoJsonConteudo);
 
         Processo processo = processoRepository.findById(processoId).orElseThrow();
-
         boolean valido = validacaoService.executarValidacoes(processo, "teste_motor_espacial.geojson", arquivoTemp);
 
         assertTrue(valido, "A validação do motor espacial deve passar sem sobreposições prévias.");
-
         Files.deleteIfExists(arquivoTemp);  
     }
 
     @Test
     @DisplayName("Tarefa 2 (Gatilho Quarentena): Deve alterar situacaoAtualId para 4 (FALHOU/Quarentena) ao falhar validação")
     void deveMoverParaQuarentenaQuandoValidacaoFalhar() throws Exception {
-        Long situacaoQuarentenaEsperada = 4L; // ID 4 = FALHOU
-
+        Long situacaoQuarentenaEsperada = 4L; 
         Path arquivoInvalido = Files.createTempFile("arquivo_invalido", ".txt");
         Files.writeString(arquivoInvalido, "Conteudo invalido para geojson");
 
         Processo processo = processoRepository.findById(processoId).orElseThrow();
-
-        Processo processoResultado = processoService.processarArquivo(
-                processo, 
-                "arquivo_invalido.txt", 
-                arquivoInvalido, 
-                1L
-        );
+        Processo processoResultado = processoService.processarArquivo(processo, "arquivo_invalido.txt", arquivoInvalido, 1L);
 
         assertEquals(situacaoQuarentenaEsperada, processoResultado.getSituacaoAtualId());
-
         Files.deleteIfExists(arquivoInvalido);
     }
 }

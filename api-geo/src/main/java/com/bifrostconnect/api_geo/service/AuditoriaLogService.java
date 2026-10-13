@@ -1,7 +1,9 @@
 package com.bifrostconnect.api_geo.service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import com.bifrostconnect.api_geo.entity.Auditoria;
@@ -15,21 +17,36 @@ public class AuditoriaLogService {
 
     private final LogProcessamentoRepository logRepository;
     private final AuditoriaRepository auditoriaRepository;
+    private final JdbcTemplate jdbcTemplate; // INJETADO PARA BUSCAR A EXECUÇÃO REAL
 
-    public AuditoriaLogService(LogProcessamentoRepository logRepository, AuditoriaRepository auditoriaRepository) {
+    public AuditoriaLogService(
+            LogProcessamentoRepository logRepository, 
+            AuditoriaRepository auditoriaRepository,
+            JdbcTemplate jdbcTemplate) {
+        
         this.logRepository = logRepository;
         this.auditoriaRepository = auditoriaRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     public void registrarLog(Processo processo, String nivel, String mensagem) {
         LogProcessamento log = new LogProcessamento();
         
-        if (processo != null) {
+        if (processo != null && processo.getId() != null) {
             log.setProcessoId(processo.getId());
             
-            // Atribui o etapaAtualId ou fallback para 1L para evitar erro NOT NULL na FK
-            Long etapaId = (processo.getEtapaAtualId() != null) ? processo.getEtapaAtualId() : 1L;
-            log.setProcessoEtapaId(etapaId);
+            List<Long> execucoes = jdbcTemplate.queryForList(
+                "SELECT id FROM processo_etapa WHERE processo_id = ? ORDER BY id DESC LIMIT 1",
+                Long.class,
+                processo.getId()
+            );
+
+            if (!execucoes.isEmpty()) {
+                log.setProcessoEtapaId(execucoes.get(0));
+            } else {
+                // Fallback legado de segurança para testes que não montaram a base inteira
+                log.setProcessoEtapaId(1L); 
+            }
         }
 
         log.setNivel(nivel);
