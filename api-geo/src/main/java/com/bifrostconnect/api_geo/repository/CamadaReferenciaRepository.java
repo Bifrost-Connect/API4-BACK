@@ -8,9 +8,9 @@ import org.locationtech.jts.geom.Geometry;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
 
-@Repository
+
+
 public interface CamadaReferenciaRepository extends JpaRepository<CamadaReferencia, Long> {
 /**
      * Busca sobreposições espaciais entre a geometria do imóvel e as camadas de referência filtradas por fonte.
