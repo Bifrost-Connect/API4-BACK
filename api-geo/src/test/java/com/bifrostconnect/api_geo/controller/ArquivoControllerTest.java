@@ -52,12 +52,18 @@ class ArquivoControllerTest {
     void setUp() {
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
 
-        // 1. Carga do domínio basilar
-        jdbcTemplate.update("""
-            INSERT INTO etapa (id, nome, ordem, descricao) 
-            VALUES (1, 'CARGA_E_VALIDACAO', 1, 'Etapa de entrada de dados') 
-            ON CONFLICT (id) DO NOTHING;
-        """);
+        // Insere todas as etapas exigidas pelo fluxo de processamento
+        jdbcTemplate.update("INSERT INTO etapa (id, nome, ordem, descricao) VALUES (1, 'CARGA_E_VALIDACAO', 1, 'Carga') ON CONFLICT (id) DO NOTHING;");
+        jdbcTemplate.update("INSERT INTO etapa (id, nome, ordem, descricao) VALUES (2, 'TRATAMENTO', 2, 'Tratamento') ON CONFLICT (id) DO NOTHING;");
+        jdbcTemplate.update("INSERT INTO etapa (id, nome, ordem, descricao) VALUES (3, 'VALIDACAO', 3, 'Validacao') ON CONFLICT (id) DO NOTHING;");
+        jdbcTemplate.update("INSERT INTO etapa (id, nome, ordem, descricao) VALUES (4, 'CALCULO_ANALITICO', 4, 'Calculo') ON CONFLICT (id) DO NOTHING;");
+
+        // Insere todas as situações exigidas
+        jdbcTemplate.update("INSERT INTO situacao (id, nome) VALUES (1, 'EM_ANDAMENTO') ON CONFLICT (id) DO NOTHING;");
+        jdbcTemplate.update("INSERT INTO situacao (id, nome) VALUES (2, 'CONCLUIDA') ON CONFLICT (id) DO NOTHING;");
+        jdbcTemplate.update("INSERT INTO situacao (id, nome) VALUES (3, 'FALHOU') ON CONFLICT (id) DO NOTHING;");
+        jdbcTemplate.update("INSERT INTO situacao (id, nome) VALUES (4, 'QUARENTENA') ON CONFLICT (id) DO NOTHING;");
+        jdbcTemplate.update("INSERT INTO situacao (id, nome) VALUES (999, 'FECHADO') ON CONFLICT (id) DO NOTHING;");
 
         jdbcTemplate.update("""
             INSERT INTO orgao (id, nome, sigla, ativo) 
@@ -83,28 +89,21 @@ class ArquivoControllerTest {
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        // 2. Persiste o processo
-        Processo processo = new Processo();
-        processo.setOrgaoId(1L);
-        processo.setOperadorId(1L);
-        processo.setConjuntoId(1L);
-        processo.setSituacaoAtualId(1L);
-        processo.setAnoSafra("2025");
-        processo.setEpsgOrigem("4326");
+        this.processoId = jdbcTemplate.queryForObject("""
+            INSERT INTO processo (ano_safra, epsg_origem, epsg_destino, orgao_id, operador_id, conjunto_id, situacao_atual_id, data_criacao)
+            VALUES ('2025', '4326', '31983', 1, 1, 1, 1, NOW())
+            RETURNING id;
+        """, Long.class);
 
-        Processo processoSalvo = processoRepository.save(processo);
-        this.processoId = processoSalvo.getId();
+        jdbcTemplate.update(
+            "INSERT INTO processo_etapa (processo_id, etapa_id, situacao_id, data_inicio) VALUES (?, 1, 1, NOW())",
+            this.processoId
+        );
 
-        // 3. Insere a entrada da tabela processo_etapa (necessária para satisfazer FK de log_processamento)
-        jdbcTemplate.update("""
-            INSERT INTO processo_etapa (id, processo_id, etapa_id, situacao_id, data_inicio) 
-            VALUES (1, ?, 1, 1, NOW()) 
-            ON CONFLICT (id) DO NOTHING;
-        """, this.processoId);
-
-        // Associa o ID da etapa criada
-        processoSalvo.setEtapaAtualId(1L);
-        processoRepository.save(processoSalvo);
+        jdbcTemplate.update(
+            "UPDATE processo SET etapa_atual_id = 1 WHERE id = ?",
+            this.processoId
+        );
     }
 
     @Test
@@ -170,7 +169,7 @@ class ArquivoControllerTest {
     @Test
     @DisplayName("Tarefa 2 (Gatilho Quarentena): Deve alterar situacaoAtualId para 4 (FALHOU/Quarentena) ao falhar validação")
     void deveMoverParaQuarentenaQuandoValidacaoFalhar() throws Exception {
-        Long situacaoQuarentenaEsperada = 4L; // ID 4 = FALHOU
+        Long situacaoQuarentenaEsperada = 4L;
 
         Path arquivoInvalido = Files.createTempFile("arquivo_invalido", ".txt");
         Files.writeString(arquivoInvalido, "Conteudo invalido para geojson");

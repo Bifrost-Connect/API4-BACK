@@ -1,0 +1,23 @@
+package com.bifrostconnect.api_geo.controller;
+
+import com.bifrostconnect.api_geo.dto.FeicaoDetalheResponseDTO;
+import com.bifrostconnect.api_geo.service.MapaService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/mapa")
+public class MapaController {
+
+    private final MapaService mapaService;
+
+    public MapaController(MapaService mapaService) {
+        this.mapaService = mapaService;
+    }
+
+    @GetMapping("/feicoes/{id}")
+    public ResponseEntity<FeicaoDetalheResponseDTO> buscarDetalhesFeicao(@PathVariable Long id) {
+        FeicaoDetalheResponseDTO resposta = mapaService.buscarDetalhesPorId(id);
+        return ResponseEntity.ok(resposta);
+    }
+}

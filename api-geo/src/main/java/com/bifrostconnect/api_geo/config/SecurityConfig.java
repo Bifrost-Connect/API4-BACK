@@ -7,6 +7,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 
+import static org.springframework.security.config.Customizer.withDefaults;
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
@@ -16,18 +18,18 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                // Tarefa 8: Restringe a rota PATCH de fechamento exclusivamente ao perfil GESTOR (retorna 403 se não tiver)
-                .requestMatchers(HttpMethod.PATCH, "/versoes/*/fechar").hasRole("GESTOR")
+                // Tarefa 8: Restringe a rota PATCH de fechar (retorna 403 Forbidden se não tiver o perfil GESTOR)
+                .requestMatchers(HttpMethod.PATCH, "/api/indicadores/*/fechar", "/versoes/*/fechar", "/api/versoes/*/fechar").hasRole("GESTOR")
                 
-                // Outras permissões de rotas
-                .requestMatchers(HttpMethod.GET, "/versoes/**", "/api/v1/**", "/processos/**", "/carga/**").hasAnyRole("GESTOR", "AUDITOR", "ADMINISTRADOR", "OPERADOR")
+                // Permissões gerais das rotas
+                .requestMatchers(HttpMethod.GET, "/api/indicadores/**", "/versoes/**", "/api/v1/**", "/processos/**", "/carga/**").hasAnyRole("GESTOR", "AUDITOR", "ADMINISTRADOR", "OPERADOR")
                 .requestMatchers(HttpMethod.POST, "/api/v1/**", "/processos/**", "/carga/**").hasAnyRole("ADMINISTRADOR", "OPERADOR")
-                .requestMatchers(HttpMethod.PUT, "/api/v1/**", "/versoes/**").hasAnyRole("ADMINISTRADOR", "OPERADOR")
+                .requestMatchers(HttpMethod.PUT, "/api/v1/**", "/api/indicadores/**", "/versoes/**").hasAnyRole("ADMINISTRADOR", "OPERADOR")
                 .requestMatchers(HttpMethod.DELETE, "/api/v1/**").hasRole("ADMINISTRADOR")
                 
                 .anyRequest().permitAll()
             )
-            .httpBasic(httpBasic -> {});
+            .httpBasic(withDefaults());
 
         return http.build();
     }

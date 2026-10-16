@@ -7,23 +7,24 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "processo")
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Processo {
-
-    private LocalDateTime dataCriacao;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    public LocalDateTime getDataCriacao() {
-    return dataCriacao;
-    }
 
     @Column(name = "ano_safra")
     private String anoSafra;
@@ -40,6 +41,9 @@ public class Processo {
     @Column(name = "data_fim")
     private LocalDateTime dataFim;
 
+    @Column(name = "data_criacao")
+    private LocalDateTime dataCriacao;
+
     @Column(name = "orgao_id")
     private Long orgaoId;
 
@@ -54,4 +58,11 @@ public class Processo {
 
     @Column(name = "etapa_atual_id")
     private Long etapaAtualId;
+
+    @PrePersist
+    public void prePersist() {
+        if (this.dataCriacao == null) {
+            this.dataCriacao = LocalDateTime.now();
+        }
+    }
 }

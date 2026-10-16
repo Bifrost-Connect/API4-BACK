@@ -1,0 +1,45 @@
+package com.bifrostconnect.api_geo.service;
+
+import com.bifrostconnect.api_geo.dto.FeicaoDetalheResponseDTO;
+import com.bifrostconnect.api_geo.entity.ArquivoProcessado;
+import com.bifrostconnect.api_geo.repository.AnaliseEspacialRepository;
+import jakarta.persistence.EntityNotFoundException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@Service
+@RequiredArgsConstructor
+public class MapaService {
+
+    private final AnaliseEspacialRepository analiseEspacialRepository;
+
+    public FeicaoDetalheResponseDTO buscarDetalhesPorId(Long id) {
+        ArquivoProcessado arquivoProcessado = analiseEspacialRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Feição não encontrada para o ID: " + id));
+
+        // Mapeando os dados alfanuméricos reais baseados na entidade ArquivoProcessado
+        Map<String, Object> alfanumericos = new HashMap<>();
+        alfanumericos.put("id", arquivoProcessado.getId());
+        alfanumericos.put("nomeArquivo", arquivoProcessado.getNomeArquivo());
+        alfanumericos.put("formato", arquivoProcessado.getFormato());
+        alfanumericos.put("epsg", arquivoProcessado.getEpsg());
+        alfanumericos.put("versao", arquivoProcessado.getVersao());
+        alfanumericos.put("urlArmazenamento", arquivoProcessado.getUrlArmazenamento());
+        alfanumericos.put("dataCriacao", arquivoProcessado.getDataCriacao());
+
+        // Mapeando os cálculos e IDs de relacionamento
+        Map<String, Object> calculos = new HashMap<>();
+        calculos.put("processoId", arquivoProcessado.getProcessoId());
+        calculos.put("arquivoOriginalId", arquivoProcessado.getArquivoOriginalId());
+        calculos.put("etapaGeracaoId", arquivoProcessado.getEtapaGeracaoId());
+
+        return FeicaoDetalheResponseDTO.builder()
+                .id(arquivoProcessado.getId())
+                .dadosAlfanumericos(alfanumericos)
+                .calculos(calculos)
+                .build();
+    }
+}

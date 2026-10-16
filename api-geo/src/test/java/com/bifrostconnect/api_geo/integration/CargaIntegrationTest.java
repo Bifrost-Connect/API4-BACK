@@ -69,10 +69,13 @@ public class CargaIntegrationTest {
     @AfterEach
     public void tearDown() {
         if (processoTesteId != null) {
+            jdbcTemplate.update("DELETE FROM arquivo_original WHERE processo_id = ?", processoTesteId);
             jdbcTemplate.update("DELETE FROM processo_etapa WHERE processo_id = ?", processoTesteId);
             jdbcTemplate.update("DELETE FROM processo WHERE id = ?", processoTesteId);
         }
         // Limpa os dados inseridos para não afetar outros testes
+        jdbcTemplate.update("DELETE FROM arquivo_original WHERE processo_id IN (SELECT id FROM processo WHERE operador_id = 1);");
+        jdbcTemplate.update("DELETE FROM processo_etapa WHERE processo_id IN (SELECT id FROM processo WHERE operador_id = 1);");
         jdbcTemplate.update("DELETE FROM processo WHERE operador_id = 1;");
         jdbcTemplate.update("DELETE FROM usuario WHERE id = 1;");
         jdbcTemplate.update("DELETE FROM conjunto WHERE id = 1;");

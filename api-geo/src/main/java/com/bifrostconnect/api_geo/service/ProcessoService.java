@@ -1,15 +1,13 @@
 package com.bifrostconnect.api_geo.service;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.List;
 
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
@@ -41,13 +39,6 @@ public class ProcessoService {
                                 "Processo não encontrado para o ID: " + id));
     }
 
-    // Tarefa 8: Retorna 409 (Conflict) caso receba comandos de edição para um ID de versão que já foi fechada
-    private void verificarSeFechado(Processo processo) {
-        if (processo.getSituacaoAtualId() != null && processo.getSituacaoAtualId().equals(999L)) { 
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Conflito: A versão/processo já foi fechada e não permite edições.");
-        }
-    }
-
     public List<?> listarAuditoresReais() {
         return List.of();
     }
@@ -58,7 +49,6 @@ public class ProcessoService {
             Long editorId) {
 
         Processo processo = buscarPorId(processoId);
-        verificarSeFechado(processo);
 
         processoEstadoService.atualizarEstado(
                 processo,
@@ -71,7 +61,7 @@ public class ProcessoService {
                 "INFO",
                 "Processo colocado em andamento pelo editor ID: " + editorId);
 
-        return salvarGarantindoCampos(processo);
+        return processoRepository.save(processo);
     }
 
     @Transactional
@@ -80,8 +70,6 @@ public class ProcessoService {
             String nomeArquivo,
             Path caminhoArquivo,
             Long usuarioId) {
-
-        verificarSeFechado(processo);
 
         auditoriaLogService.registrarLog(
                 processo,
@@ -125,7 +113,7 @@ public class ProcessoService {
                     "ERROR",
                     "Inconsistências encontradas. O processo foi movido para a QUARENTENA.");
 
-            return salvarGarantindoCampos(processo);
+            return processoRepository.save(processo);
         }
 
         processoEstadoService.atualizarEstado(
@@ -145,7 +133,7 @@ public class ProcessoService {
                 "INFO",
                 "Fluxo concluído com sucesso.");
 
-        return salvarGarantindoCampos(processo);
+        return processoRepository.save(processo);
     }
 
     @Transactional
@@ -164,62 +152,59 @@ public class ProcessoService {
     @Transactional
     public void fecharIndicador(Long id, Long gestorId) {
         Processo processo = buscarPorId(id);
-        verificarSeFechado(processo);
 
-        processoEstadoService.atualizarEstado(
-                processo,
-                "FECHAMENTO",
-                "FECHADO",
-                "Indicador fechado oficialmente."
-        );
+        if (processo.getSituacaoAtualId() != null && processo.getSituacaoAtualId().equals(999L)) {
+            throw new IllegalStateException("Esta versão/processo já se encontra fechada.");
+        }
 
-        auditoriaLogService.registrarAuditoria(
-                gestorId,
-                "FECHAMENTO_INDICADOR_OFICIAL",
-                "Canetada oficial aplicada ao indicador/processo ID: " + processo.getId() + " pelo Gestor ID: " + gestorId
-        );
+        processo.setSituacaoAtualId(999L);
 
-        salvarGarantindoCampos(processo);
+        if (auditoriaLogService != null) {
+            auditoriaLogService.registrarLog(
+                    processo,
+                    "INFO",
+                    "Processo fechado pelo gestor ID: " + gestorId);
+        }
+
+        processoRepository.save(processo);
     }
 
     public Resource exportarArquivoConsolidado(Long id, String formato) {
         Processo processo = buscarPorId(id);
 
-        try {
-            Path pastaProcessada = Path.of("zona_processada_storage");
-            if (!java.nio.file.Files.exists(pastaProcessada)) {
-                java.nio.file.Files.createDirectories(pastaProcessada);
-            }
-
-            String extensao = formato != null && formato.equalsIgnoreCase("csv") ? "csv" : "geojson";
-            String nomeArquivo = id + "_exportado." + extensao;
-            Path caminhoArquivo = pastaProcessada.resolve(nomeArquivo);
-
-            if (!java.nio.file.Files.exists(caminhoArquivo)) {
-                String conteudo = extensao.equals("csv") 
-                    ? "id,situacao_atual_id,data_criacao\n" + processo.getId() + "," + processo.getSituacaoAtualId() + "," + processo.getDataCriacao()
-                    : "{\"type\": \"FeatureCollection\", \"features\": []}";
-                java.nio.file.Files.writeString(caminhoArquivo, conteudo);
-            }
-
-            Resource recurso = new UrlResource(caminhoArquivo.toUri());
-            if (recurso.exists() && recurso.isReadable()) {
-                return recurso;
-            } else {
-                throw new RuntimeException("Não foi possível ler o arquivo exportado.");
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Erro ao gerar exportação para o processo ID: " + id, e);
+        String conteudo;
+        if ("geojson".equalsIgnoreCase(formato)) {
+            conteudo = "{\"type\": \"FeatureCollection\", \"features\": [], \"processoId\": " + processo.getId() + "}";
+        } else {
+            conteudo = "id,ano_safra,data_inicio,situacao_atual_id\n" + 
+                       processo.getId() + "," + processo.getAnoSafra() + "," + processo.getDataInicio() + "," + processo.getSituacaoAtualId();
         }
+
+        byte[] bytes = conteudo.getBytes(StandardCharsets.UTF_8);
+        return new ByteArrayResource(bytes);
     }
 
-    private Processo salvarGarantindoCampos(Processo processo) {
-        if (processo.getDataCriacao() == null) {
-            processo.setDataCriacao(LocalDateTime.now());
+    @Transactional
+    public Processo atualizarProcesso(Long id, Processo processoAtualizado) {
+        Processo processo = buscarPorId(id);
+
+        if (processo.getSituacaoAtualId() != null && processo.getSituacaoAtualId().equals(999L)) {
+            throw new IllegalStateException("Não é permitido alterar uma versão que já foi fechada.");
         }
-        if (processo.getAnoSafra() == null) {
-            processo.setAnoSafra(String.valueOf(LocalDateTime.now().getYear()));
+
+        if (processoAtualizado.getAnoSafra() != null) {
+            processo.setAnoSafra(processoAtualizado.getAnoSafra());
         }
+        if (processoAtualizado.getEpsgOrigem() != null) {
+            processo.setEpsgOrigem(processoAtualizado.getEpsgOrigem());
+        }
+        if (processoAtualizado.getEpsgDestino() != null) {
+            processo.setEpsgDestino(processoAtualizado.getEpsgDestino());
+        }
+        if (processoAtualizado.getDataFim() != null) {
+            processo.setDataFim(processoAtualizado.getDataFim());
+        }
+
         return processoRepository.save(processo);
     }
 }
