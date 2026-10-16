@@ -21,7 +21,7 @@ public class ArquivoService {
     private final HashService hashService;
 
     // Diretório local que simula o Object Storage da Zona Bruta
-    private final String STORAGE_DIR = "zona_bruta_storage/";
+    private static final String STORAGE_DIR = "zona_bruta_storage/";
 
     public ArquivoOriginal processarEArmazenarArquivo(MultipartFile file, Long processoId, Long usuarioUploadId) throws Exception {
         
