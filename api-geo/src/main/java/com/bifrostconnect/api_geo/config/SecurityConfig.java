@@ -22,7 +22,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PATCH, "/api/indicadores/*/fechar", "/versoes/*/fechar", "/api/versoes/*/fechar").hasRole("GESTOR")
                 
                 // Permissões gerais das rotas
-                .requestMatchers(HttpMethod.GET, "/api/indicadores/**", "/versoes/**", "/api/v1/**", "/processos/**", "/carga/**").hasAnyRole("GESTOR", "AUDITOR", "ADMINISTRADOR", "OPERADOR")
+                .requestMatchers(HttpMethod.GET, "/api/indicadores/**", "/versoes/**", "/api/v1/**", "/api/mapa/**", "/processos/**", "/carga/**").hasAnyRole("GESTOR", "AUDITOR", "ADMINISTRADOR", "OPERADOR")
                 .requestMatchers(HttpMethod.POST, "/api/v1/**", "/processos/**", "/carga/**").hasAnyRole("ADMINISTRADOR", "OPERADOR")
                 .requestMatchers(HttpMethod.PUT, "/api/v1/**", "/api/indicadores/**", "/versoes/**").hasAnyRole("ADMINISTRADOR", "OPERADOR")
                 .requestMatchers(HttpMethod.DELETE, "/api/v1/**").hasRole("ADMINISTRADOR")
