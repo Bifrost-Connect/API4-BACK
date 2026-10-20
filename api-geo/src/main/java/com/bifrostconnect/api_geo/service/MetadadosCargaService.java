@@ -26,6 +26,7 @@ public class MetadadosCargaService {
         processo.setOperadorId(request.getOperadorId());
         processo.setAnoSafra(request.getAnoSafra());
         processo.setEpsgOrigem(request.getEpsgOrigem());
+        processo.setDataCriacao(java.time.LocalDateTime.now());
 
         Processo processoSalvo = processoRepository.saveAndFlush(processo);
 

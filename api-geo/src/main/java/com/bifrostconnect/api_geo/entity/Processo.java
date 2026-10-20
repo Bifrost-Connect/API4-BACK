@@ -9,10 +9,11 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
+
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 @Entity
 @Table(name = "processo")
@@ -25,6 +26,17 @@ public class Processo {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Builder.Default
+    @Column(name = "data_criacao")
+    private LocalDateTime dataCriacao = LocalDateTime.now();
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.dataCriacao == null) {
+            this.dataCriacao = LocalDateTime.now();
+        }
+    }
 
     @Column(name = "ano_safra")
     private String anoSafra;
@@ -41,9 +53,6 @@ public class Processo {
     @Column(name = "data_fim")
     private LocalDateTime dataFim;
 
-    @Column(name = "data_criacao")
-    private LocalDateTime dataCriacao;
-
     @Column(name = "orgao_id")
     private Long orgaoId;
 
@@ -58,11 +67,4 @@ public class Processo {
 
     @Column(name = "etapa_atual_id")
     private Long etapaAtualId;
-
-    @PrePersist
-    public void prePersist() {
-        if (this.dataCriacao == null) {
-            this.dataCriacao = LocalDateTime.now();
-        }
-    }
 }

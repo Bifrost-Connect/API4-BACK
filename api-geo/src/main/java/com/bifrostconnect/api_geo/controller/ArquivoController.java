@@ -27,7 +27,7 @@ import com.bifrostconnect.api_geo.service.ArquivoService;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1/arquivos")
+@RequestMapping({"/api/v1/arquivos", "/v1/arquivos", "/arquivos", "/api/arquivos"})
 @RequiredArgsConstructor
 public class ArquivoController {
 
@@ -47,88 +47,81 @@ public class ArquivoController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(erroResponse);
         }
 
-        // Tarefa 5: Retornar Status 415 se a extensão for inválida
-        String nomeArquivo = file.getOriginalFilename();
-        if (nomeArquivo != null && nomeArquivo.contains("/")) {
-            nomeArquivo = nomeArquivo.substring(nomeArquivo.lastIndexOf("/") + 1);
-        }
-        if (nomeArquivo != null && nomeArquivo.contains("\\")) {
-            nomeArquivo = nomeArquivo.substring(nomeArquivo.lastIndexOf("\\") + 1);
-        }
+            // Tarefa 5: Retornar Status 415 se a extensão for inválida
+            String nomeArquivo = file.getOriginalFilename();
+            if (nomeArquivo != null && nomeArquivo.contains("/")) {
+                nomeArquivo = nomeArquivo.substring(nomeArquivo.lastIndexOf("/") + 1);
+            }
+            if (nomeArquivo != null && nomeArquivo.contains("\\")) {
+                nomeArquivo = nomeArquivo.substring(nomeArquivo.lastIndexOf("\\") + 1);
+            }
 
-        if (nomeArquivo == null || (!nomeArquivo.toLowerCase().endsWith(".geojson") && !nomeArquivo.toLowerCase().endsWith(".zip"))) {
-            Map<String, Object> erroResponse = new HashMap<>();
-            erroResponse.put("sucesso", false);
-            erroResponse.put("erro", "Tipo de arquivo não suportado. Envie .geojson ou .zip.");
-            return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(erroResponse);
-        }
+            if (nomeArquivo == null || (!nomeArquivo.toLowerCase().endsWith(".geojson") && !nomeArquivo.toLowerCase().endsWith(".zip"))) {
+                Map<String, Object> erroResponse = new HashMap<>();
+                erroResponse.put("sucesso", false);
+                erroResponse.put("erro", "Tipo de arquivo não suportado. Envie .geojson ou .zip.");
+                return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(erroResponse);
+            }
 
-        try {
-            // Chama a regra de negócio do serviço original
-            ArquivoOriginal arquivoSalvo = arquivoService.processarEArmazenarArquivo(file, processoId, usuarioId);
+            try {
+                // Chama a regra de negócio
+                ArquivoOriginal arquivoSalvo = arquivoService.processarEArmazenarArquivo(file, processoId, usuarioId);
 
-            // Monta o JSON de resposta (Comprovante + Controle de Estado para o Front-end)
-            Map<String, Object> response = new HashMap<>();
-            response.put("sucesso", true);
-            response.put("mensagem", "Carga realizada na Zona Bruta com sucesso!");
-            response.put("hash_sha256", arquivoSalvo.getHashSha256());
-            response.put("id_arquivo", arquivoSalvo.getId());
-            response.put("processoId", processoId);
-            
-            // Adiciona campos de controle de estado padrão para o front-end sincronizar
-            response.put("situacaoAtualId", 1L); // Estado padrão em andamento/processamento
-            response.put("etapaAtualId", 1L);
-            response.put("statusProcessamento", "PROCESSANDO");
+                // Monta o JSON de resposta (Comprovante)
+                Map<String, Object> response = new HashMap<>();
+                response.put("sucesso", true);
+                response.put("mensagem", "Carga realizada na Zona Bruta com sucesso!");
+                response.put("hash_sha256", arquivoSalvo.getHashSha256());
+                response.put("id_arquivo", arquivoSalvo.getId());
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+                return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
-        } catch (Exception e) {
-            Map<String, Object> erroResponse = new HashMap<>();
-            erroResponse.put("sucesso", false);
-            erroResponse.put("erro", e.getMessage());
-            
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(erroResponse);
-        }
+            } catch (Exception e) {
+                Map<String, Object> erroResponse = new HashMap<>();
+                erroResponse.put("sucesso", false);
+                erroResponse.put("erro", e.getMessage());
+                
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(erroResponse);
+            }
     }
-
     // método que retorna o arquivo original, preservando o formato e o conteúdo
     @GetMapping("/{id}")
     public ResponseEntity<Resource> baixarArquivoOriginal(@PathVariable Long id) {
 
-        try {
-            ArquivoOriginal arquivo = arquivoService.buscarArquivoOriginal(id);
+    try {
+        ArquivoOriginal arquivo = arquivoService.buscarArquivoOriginal(id);
 
-            Path caminho = Paths.get(arquivo.getUrlArmazenamento());
+        Path caminho = Paths.get(arquivo.getUrlArmazenamento());
 
-            if (!Files.exists(caminho)) {
-                return ResponseEntity.notFound().build();
-            }
-
-            ByteArrayResource recurso = new ByteArrayResource(Files.readAllBytes(caminho));
-
-            MediaType tipoMedia = MediaType.APPLICATION_OCTET_STREAM;
-
-            if (arquivo.getTipoMime() != null && !arquivo.getTipoMime().isBlank()) {
-                try {
-                    tipoMedia = MediaType.parseMediaType(arquivo.getTipoMime());
-                } catch (Exception ignored) {
-                    
-                }
-            }
-
-            return ResponseEntity.ok()
-                    .contentType(tipoMedia)
-                    .header(
-                        HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + arquivo.getNomeOriginal() + "\""
-                    )
-                    .body(recurso);
-
-        } catch (IllegalArgumentException e) {
+        if (!Files.exists(caminho)) {
             return ResponseEntity.notFound().build();
-
-        } catch (IOException e) {
-            return ResponseEntity.internalServerError().build();
         }
+
+        ByteArrayResource recurso = new ByteArrayResource(Files.readAllBytes(caminho));
+
+        MediaType tipoMedia = MediaType.APPLICATION_OCTET_STREAM;
+
+        if (arquivo.getTipoMime() != null && !arquivo.getTipoMime().isBlank()) {
+            try {
+                tipoMedia = MediaType.parseMediaType(arquivo.getTipoMime());
+            } catch (Exception ignored) {
+                
+            }
+        }
+
+        return ResponseEntity.ok()
+                .contentType(tipoMedia)
+                .header(
+                    HttpHeaders.CONTENT_DISPOSITION,
+                    "attachment; filename=\"" + arquivo.getNomeOriginal() + "\""
+                )
+                .body(recurso);
+
+    } catch (IllegalArgumentException e) {
+        return ResponseEntity.notFound().build();
+
+    } catch (IOException e) {
+        return ResponseEntity.internalServerError().build();
     }
+}
 }

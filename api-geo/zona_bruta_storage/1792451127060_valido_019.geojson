@@ -1,0 +1,40 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id_propriedade": "VAL-019",
+        "nome": "Fazenda Válida 19",
+        "area_ha": 100
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -46.05,
+              -15
+            ],
+            [
+              -46.04,
+              -15
+            ],
+            [
+              -46.04,
+              -15.01
+            ],
+            [
+              -46.05,
+              -15.01
+            ],
+            [
+              -46.05,
+              -15
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.1</version>
+        <version>3.3.4</version> <!-- Ajustado para uma versão estável 3.x. Podes alterar para a versão exata que estavas a usar antes do erro -->
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.bifrostconnect</groupId>
@@ -44,24 +44,30 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-    <!-- Jackson Dependencies -->
-     <dependency>
-         <groupId>com.fasterxml.jackson.core</groupId>
-         <artifactId>jackson-core</artifactId>
-     </dependency>
-     <dependency>
-         <groupId>com.fasterxml.jackson.core</groupId>
-         <artifactId>jackson-annotations</artifactId>
-     </dependency>
-     <dependency>
-         <groupId>com.fasterxml.jackson.core</groupId>
-         <artifactId>jackson-databind</artifactId>
-     </dependency>
 
-        <!-- Spring Security -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- Dependência para permitir o uso de @WithMockUser nos testes de integração -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
         </dependency>
 
         <!-- Banco de Dados PostgreSQL -->
@@ -71,10 +77,9 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Flyway Migration -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-flyway</artifactId>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -87,12 +92,6 @@
             <artifactId>hibernate-spatial</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -100,29 +99,13 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Testes (Inclui JUnit, MockMvc, Spring Boot Test) -->
+        <!-- Testes (Inclui JUnit, MockMvc, Spring Boot Test e AutoConfigureMockMvc) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <!-- Adicionado explicitamente para forçar o reconhecimento do AutoConfigureMockMvc -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-test-autoconfigure</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-         <groupId>org.springframework.boot</groupId>
-         <artifactId>spring-boot-starter-webmvc-test</artifactId>
-         <scope>test</scope>
-       </dependency>
- 
     </dependencies>
-
-    
 
     <build>
         <plugins>
