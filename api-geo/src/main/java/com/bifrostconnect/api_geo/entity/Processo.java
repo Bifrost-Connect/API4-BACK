@@ -15,14 +15,18 @@ import lombok.Data;
 @Data
 public class Processo {
 
-    private LocalDateTime dataCriacao;
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    public LocalDateTime getDataCriacao() {
-    return dataCriacao;
+    @Column(name = "data_criacao")
+    private LocalDateTime dataCriacao = LocalDateTime.now();
+
+    @jakarta.persistence.PrePersist
+    protected void onCreate() {
+        if (this.dataCriacao == null) {
+            this.dataCriacao = LocalDateTime.now();
+        }
     }
 
     @Column(name = "ano_safra")

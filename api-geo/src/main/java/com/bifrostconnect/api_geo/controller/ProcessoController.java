@@ -31,7 +31,7 @@ import com.bifrostconnect.api_geo.service.ProcessoDashboardService;
 import com.bifrostconnect.api_geo.service.ProcessoService;
 
 @RestController
-@RequestMapping("/processos")
+@RequestMapping({"/processos", "/api/processos"})
 public class ProcessoController {
 
     private final ProcessoService processoService;

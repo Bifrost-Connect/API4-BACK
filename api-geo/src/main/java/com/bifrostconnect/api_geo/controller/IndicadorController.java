@@ -11,7 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/indicadores")
+@RequestMapping({"/api/indicadores", "/indicadores", "/api/v1/indicadores", "/versoes", "/api/versoes"})
 @RequiredArgsConstructor
 public class IndicadorController {
 
@@ -36,7 +36,7 @@ public class IndicadorController {
     }
 
     // Tarefa 7 (API de Exportação): Rota GET /api/indicadores/{id}/exportar (ou /versoes/{id}/exportar)
-    @GetMapping({"/{id}/exportar", "/../../versoes/{id}/exportar"})
+    @GetMapping("/{id}/exportar")
     public ResponseEntity<Resource> exportarVersao(
             @PathVariable Long id,
             @RequestParam(value = "formato", defaultValue = "geojson") String formato) {

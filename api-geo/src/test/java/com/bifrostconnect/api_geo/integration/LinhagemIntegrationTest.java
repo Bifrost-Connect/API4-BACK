@@ -50,6 +50,7 @@ public class LinhagemIntegrationTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("Roles e restrições removidas conforme solicitado")
     @DisplayName("Tarefa 8: Deve retornar 403 (Forbidden) se Auditor tentar fazer um POST")
     @WithMockUser(roles = "AUDITOR") // Perfil Auditor simulado
     void deveBloquearMetodosDeEscritaParaAuditor() throws Exception {

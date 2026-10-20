@@ -29,7 +29,7 @@ import com.bifrostconnect.api_geo.service.MetadadosCargaService;
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping("/carga")
+@RequestMapping({"/carga", "/api/carga"})
 public class CargaController {
 
     private final MetadadosCargaService metadadosCargaService;
