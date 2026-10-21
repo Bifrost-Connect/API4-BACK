@@ -10,6 +10,8 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 
+import jakarta.transaction.Transactional;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Transactional
 public class LinhagemIntegrationTest {
 
     @Autowired
@@ -25,10 +28,11 @@ public class LinhagemIntegrationTest {
     @Test
     @DisplayName("Tarefa 9: Deve retornar a linhagem completa contendo o Hash SHA-256 exato da ingestão")
     @WithMockUser(roles = "AUDITOR")
-    @Sql(statements = {
-        // Insere um cenário válido no banco em memória H2/PostgreSQL para o teste preenchendo as colunas obrigatórias
-        "INSERT INTO processo (id, orgao_id, operador_id, conjunto_id, situacao_atual_id, etapa_atual_id, data_criacao, ano_safra) VALUES (999, 1, 1, 1, 5, 5, CURRENT_TIMESTAMP, '2026') ON CONFLICT DO NOTHING;",
-        "INSERT INTO arquivo_original (id, processo_id, hash_sha256, nome_original) VALUES (999, 999, 'A1B2C3D4E5F6G7H8I9J0', 'teste.geojson') ON CONFLICT DO NOTHING;"
+        @Sql(statements = {
+        "INSERT INTO processo (id, orgao_id, operador_id, conjunto_id, situacao_atual_id, etapa_atual_id, data_criacao, ano_safra, epsg_origem) "
+            + "VALUES (999, 1, 1, 1, 5, 5, CURRENT_TIMESTAMP, '2026', '4674') ON CONFLICT DO NOTHING;",
+        "INSERT INTO arquivo_original (id, processo_id, usuario_upload_id, hash_sha256, nome_original, url_armazenamento) "
+            + "VALUES (999, 999, 1, 'A1B2C3D4E5F6G7H8I9J0', 'teste.geojson', 'teste/teste.geojson') ON CONFLICT DO NOTHING;"
     })
     void deveRetornarLinhagemComHashExato() throws Exception {
         
