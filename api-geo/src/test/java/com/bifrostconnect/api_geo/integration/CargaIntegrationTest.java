@@ -2,11 +2,13 @@ package com.bifrostconnect.api_geo.integration;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -68,21 +70,12 @@ public class CargaIntegrationTest {
 
     @AfterEach
     public void tearDown() {
-        if (processoTesteId != null) {
-            jdbcTemplate.update("DELETE FROM arquivo_original WHERE processo_id = ?", processoTesteId);
-            jdbcTemplate.update("DELETE FROM processo_etapa WHERE processo_id = ?", processoTesteId);
-            jdbcTemplate.update("DELETE FROM processo WHERE id = ?", processoTesteId);
-        }
-        // Limpa os dados inseridos para não afetar outros testes
-        jdbcTemplate.update("DELETE FROM arquivo_original WHERE processo_id IN (SELECT id FROM processo WHERE operador_id = 1);");
-        jdbcTemplate.update("DELETE FROM processo_etapa WHERE processo_id IN (SELECT id FROM processo WHERE operador_id = 1);");
-        jdbcTemplate.update("DELETE FROM processo WHERE operador_id = 1;");
-        jdbcTemplate.update("DELETE FROM usuario WHERE id = 1;");
-        jdbcTemplate.update("DELETE FROM conjunto WHERE id = 1;");
-        jdbcTemplate.update("DELETE FROM orgao WHERE id = 1;");
+        // O @Transactional da classe já faz o rollback de tudo automaticamente.
+        // Removidos os comandos DELETE para respeitar a trigger de imutabilidade (RN02) da tabela arquivo_original.
     }
 
     @Test
+    @WithMockUser(username = "operador", roles = "OPERADOR")
     public void deveCriarMetadadosEEncontrarNaListagem() throws Exception {
         String jsonRequest = """
             {

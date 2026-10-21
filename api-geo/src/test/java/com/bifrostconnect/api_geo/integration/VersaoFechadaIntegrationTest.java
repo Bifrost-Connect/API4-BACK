@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf; // Import necessário
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -48,6 +49,7 @@ class VersaoFechadaIntegrationTest {
                 .alocarEditorEAtualizarSituacao(eq(idProcessoFechado), anyLong());
 
         mockMvc.perform(put("/processos/{id}/editor", idProcessoFechado)
+                        .with(csrf()) // Adicionado para passar pela validação CSRF do Spring Security no teste
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"editorId\": 1}"))
                 .andExpect(status().isConflict());

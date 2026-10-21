@@ -33,7 +33,7 @@ import com.bifrostconnect.api_geo.service.EncaminhamentoQuarentenaService;
 import com.bifrostconnect.api_geo.service.LinhagemService;
 import com.bifrostconnect.api_geo.service.MetadadosCargaService;
 import com.bifrostconnect.api_geo.service.ReprocessamentoCargaService;
-import com.bifrostconnect.api_geo.service.ExportacaoRejeicoesService; // Import adicionado
+import com.bifrostconnect.api_geo.service.ExportacaoRejeicoesService;
 
 import jakarta.validation.Valid;
 
@@ -46,11 +46,10 @@ public class CargaController {
     private final AuditoriaLogService auditoriaLogService;
     private final LinhagemService linhagemService;
     private final ExportacaoRejeicoesService exportacaoRejeicoesService; 
-    private final EncaminhamentoQuarentenaService encaminhamentoQuarentenaService;     
+    private final EncaminhamentoQuarentenaService encaminhamentoQuarentenaService;    
     private final ReprocessamentoCargaService reprocessamentoCargaService;
     private final CancelamentoCargaService cancelamentoCargaService;
     
-
     public CargaController(
             MetadadosCargaService metadadosCargaService,
             ArquivoUploadService arquivoUploadService,
@@ -59,7 +58,7 @@ public class CargaController {
             ExportacaoRejeicoesService exportacaoRejeicoesService,
             EncaminhamentoQuarentenaService encaminhamentoQuarentenaService,
             ReprocessamentoCargaService reprocessamentoCargaService,
-            CancelamentoCargaService cancelamentoCargaService) { // Adicionado
+            CancelamentoCargaService cancelamentoCargaService) {
 
         this.metadadosCargaService = metadadosCargaService;
         this.arquivoUploadService = arquivoUploadService;
@@ -236,7 +235,6 @@ public class CargaController {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.parseMediaType("text/csv; charset=UTF-8"));
             
-            // CORREÇÃO AQUI: Usa ContentDisposition.attachment() nativo do Spring
             ContentDisposition contentDisposition = ContentDisposition
                     .attachment()
                     .filename("rejeicoes_processo_" + id + ".csv", StandardCharsets.UTF_8)
@@ -262,18 +260,18 @@ public class CargaController {
             @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
         
         encaminhamentoQuarentenaService.notificarOperador(id, usuarioId);
-        return ResponseEntity.noContent().build(); // Retorna 204 No Content indicando sucesso na ação
+        return ResponseEntity.noContent().build();
     }
 
-        // ==========================================
-        // Tarefa 18: API de Reprocessamento de Carga
-        // ==========================================
-        @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
-        @PostMapping({ "/{id}/reprocessar", "/cargas/{id}/reprocessar" })
-        public ResponseEntity<?> reprocessarCarga(
-                @PathVariable Long id,
-                @RequestParam("file") MultipartFile file,
-                @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
+    // ==========================================
+    // Tarefa 18: API de Reprocessamento de Carga
+    // ==========================================
+    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
+    @PostMapping({ "/{id}/reprocessar", "/cargas/{id}/reprocessar" })
+    public ResponseEntity<?> reprocessarCarga(
+            @PathVariable Long id,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
 
         if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body("O arquivo enviado para reprocessamento está vazio.");
@@ -290,20 +288,19 @@ public class CargaController {
         } catch (Exception e) {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro ao reprocessar a carga: " + e.getMessage());
         }
-        }
+    }
 
-        // ==========================================
-        // Tarefa 19: API de Cancelamento/Invalidação
-        // ==========================================
-        @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
-        @PatchMapping({ "/{id}/cancelar", "/cargas/{id}/cancelar" })
-        public ResponseEntity<Void> cancelarCarga(
-                @PathVariable Long id,
-                @Valid @RequestBody CancelamentoRequest request,
-                @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
+    // ==========================================
+    // Tarefa 19: API de Cancelamento/Invalidação
+    // ==========================================
+    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
+    @PatchMapping({ "/{id}/cancelar", "/cargas/{id}/cancelar" })
+    public ResponseEntity<Void> cancelarCarga(
+            @PathVariable Long id,
+            @Valid @RequestBody CancelamentoRequest request,
+            @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
 
         cancelamentoCargaService.cancelarCarga(id, request.getMotivo(), usuarioId);
-        return ResponseEntity.noContent().build(); // Retorna 204 No Content indicando sucesso na invalidação
-        }
-
-}       
+        return ResponseEntity.noContent().build();
+    }
+}

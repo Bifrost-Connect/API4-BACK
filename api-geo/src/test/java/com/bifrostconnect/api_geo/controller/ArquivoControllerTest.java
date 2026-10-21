@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -89,31 +90,27 @@ class ArquivoControllerTest {
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        this.processoId = jdbcTemplate.queryForObject("""
-            INSERT INTO processo (ano_safra, epsg_origem, epsg_destino, orgao_id, operador_id, conjunto_id, situacao_atual_id, data_criacao)
-            VALUES ('2025', '4326', '31983', 1, 1, 1, 1, NOW())
+        // Inserção direta via JdbcTemplate garantindo existência física imediata no banco e evitando o erro de FK
+        this.processoId = jdbcTemplate.queryForObject(
+            """
+            INSERT INTO processo (ano_safra, epsg_origem, epsg_destino, orgao_id, operador_id, conjunto_id, situacao_atual_id, etapa_atual_id, data_criacao)
+            VALUES ('2025', '4326', '31983', 1, 1, 1, 1, 1, NOW())
             RETURNING id;
-        """, Long.class);
-
-        jdbcTemplate.update(
-            "INSERT INTO processo_etapa (processo_id, etapa_id, situacao_id, data_inicio) VALUES (?, 1, 1, NOW())",
-            this.processoId
-        );
-
-        jdbcTemplate.update(
-            "UPDATE processo SET etapa_atual_id = 1 WHERE id = ?",
-            this.processoId
+            """,
+            Long.class
         );
     }
 
     @Test
     @DisplayName("Deve realizar o upload de arquivo na Zona Bruta com sucesso")
+    @WithMockUser(username = "operador", roles = "OPERADOR")
     void deveFazerUploadDeArquivo() throws Exception {
+        String conteudoUnico = "{\"type\": \"FeatureCollection\", \"features\": [], \"nonce\": " + System.currentTimeMillis() + "}";
         MockMultipartFile file = new MockMultipartFile(
                 "file",
                 "malha_sidrolandia.geojson",
                 "application/json",
-                "{\"type\": \"FeatureCollection\", \"features\": []}".getBytes()
+                conteudoUnico.getBytes()
         );
 
         mockMvc.perform(multipart("/api/v1/arquivos/upload")
@@ -129,6 +126,7 @@ class ArquivoControllerTest {
 
     @Test
     @DisplayName("Tarefa 1 (Motor Espacial): Deve ler GeoJSON e validar motor espacial sem sobreposição")
+    @WithMockUser(username = "operador", roles = "OPERADOR")
     void deveValidarMotorEspacialComSucesso() throws Exception {
         String geoJsonConteudo = """
             {
@@ -168,6 +166,7 @@ class ArquivoControllerTest {
 
     @Test
     @DisplayName("Tarefa 2 (Gatilho Quarentena): Deve alterar situacaoAtualId para 4 (FALHOU/Quarentena) ao falhar validação")
+    @WithMockUser(username = "operador", roles = "OPERADOR")
     void deveMoverParaQuarentenaQuandoValidacaoFalhar() throws Exception {
         Long situacaoQuarentenaEsperada = 4L;
 
