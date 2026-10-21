@@ -185,14 +185,31 @@ class ArquivoControllerTest {
     @Test
     @DisplayName("Tarefa 2 (Gatilho Quarentena): Deve alterar situacaoAtualId para 4 (FALHOU/Quarentena) ao falhar validação")
     void deveMoverParaQuarentenaQuandoValidacaoFalhar() throws Exception {
-        Long situacaoQuarentenaEsperada = 4L; 
-        Path arquivoInvalido = Files.createTempFile("arquivo_invalido", ".txt");
-        Files.writeString(arquivoInvalido, "Conteudo invalido para geojson");
+        Long situacaoQuarentenaEsperada = 4L;
 
-        Processo processo = processoRepository.findById(processoId).orElseThrow();
-        Processo processoResultado = processoService.processarArquivo(processo, "arquivo_invalido.txt", arquivoInvalido, 1L);
+        Path arquivoInvalido = Files.createTempFile(
+                "arquivo_invalido", ".geojson");
 
-        assertEquals(situacaoQuarentenaEsperada, processoResultado.getSituacaoAtualId());
-        Files.deleteIfExists(arquivoInvalido);
-    }
+        try {
+            Files.writeString(
+                    arquivoInvalido,
+                    "Conteudo invalido para geojson");
+
+            Processo processo = processoRepository.findById(processoId)
+                    .orElseThrow();
+
+            Processo processoResultado = processoService.processarArquivo(
+                    processo,
+                    arquivoInvalido.getFileName().toString(),
+                    arquivoInvalido,
+                    1L);
+
+            assertEquals(
+                    situacaoQuarentenaEsperada,
+                    processoResultado.getSituacaoAtualId());
+
+        } finally {
+            Files.deleteIfExists(arquivoInvalido);
+        }
+}
 }
