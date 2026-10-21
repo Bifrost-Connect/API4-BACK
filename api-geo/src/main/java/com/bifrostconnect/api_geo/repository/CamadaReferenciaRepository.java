@@ -71,4 +71,11 @@ public interface CamadaReferenciaRepository extends JpaRepository<CamadaReferenc
         @Param("ano") Integer ano
     );
 
+    @Query(value = """
+        SELECT CASE WHEN COUNT(cr.id) > 0 THEN true ELSE false END 
+        FROM camada_referencia cr 
+        WHERE cr.identificador IN (:identificadores)
+        """, nativeQuery = true)
+    boolean existemIdentificadoresDuplicados(@Param("identificadores") List<String> identificadores);
+
 }
