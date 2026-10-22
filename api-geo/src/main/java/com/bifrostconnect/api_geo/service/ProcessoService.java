@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.nio.file.Files;
 
+import com.bifrostconnect.api_geo.dto.ResultadoValidacaoTopologica;
 import com.bifrostconnect.api_geo.entity.ArquivoProcessado;
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
@@ -29,6 +30,7 @@ public class ProcessoService {
     private final GeoJsonArquivoService geoJsonArquivoService;
     private final PadronizacaoEpsgService padronizacaoEpsgService;
     private final ArquivoProcessadoService arquivoProcessadoService;
+    private final ValidacaoTopologicaService validacaoTopologicaService;
 
     public ProcessoService(
             ProcessoRepository processoRepository,
@@ -38,7 +40,8 @@ public class ProcessoService {
             GeoJsonEpsgService geoJsonEpsgService,
             GeoJsonArquivoService geoJsonArquivoService,
             PadronizacaoEpsgService padronizacaoEpsgService,
-            ArquivoProcessadoService arquivoProcessadoService
+            ArquivoProcessadoService arquivoProcessadoService,
+            ValidacaoTopologicaService validacaoTopologicaService
         ) {
 
         this.processoRepository = processoRepository;
@@ -49,6 +52,7 @@ public class ProcessoService {
         this.geoJsonArquivoService = geoJsonArquivoService;
         this.padronizacaoEpsgService = padronizacaoEpsgService;
         this.arquivoProcessadoService = arquivoProcessadoService;
+        this.validacaoTopologicaService = validacaoTopologicaService;
     }
 
     public Processo buscarPorId(Long id) {
@@ -266,6 +270,53 @@ public class ProcessoService {
                     + ", detectado EPSG:" + epsgDetectado
                     + ", cópia de trabalho em EPSG:" + PadronizacaoEpsgService.EPSG_OFICIAL
                     + " (arquivo_processado ID: " + copiaTrabalho.getId() + ").");
+
+    // 2ª parte do Tratamento: checa a topologia dos polígonos da cópia de trabalho
+    processoEstadoService.atualizarEstado(
+            processo,
+            "TRATAMENTO",
+            "EM_ANDAMENTO",
+            "Tratamento: validação topológica dos polígonos.");
+
+    ResultadoValidacaoTopologica topologia;
+
+    try {
+        topologia = validacaoTopologicaService.validar(processo, copiaTrabalho);
+
+    } catch (Exception e) {
+        String mensagem = "Falha na validação topológica dos polígonos: "
+                + e.getMessage();
+
+        processoEstadoService.atualizarEstado(
+                processo,
+                "TRATAMENTO",
+                "FALHOU",
+                mensagem);
+
+        auditoriaLogService.registrarLog(
+                processo,
+                "ERROR",
+                mensagem);
+
+        salvarGarantindoCampos(processo);
+
+        throw new ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                mensagem,
+                e);
+    }
+
+    auditoriaLogService.registrarLog(
+            processo,
+            topologia.possuiProblemas() ? "WARNING" : "INFO",
+            "Validação topológica: " + topologia.feicoesCarregadas() + " de "
+                    + topologia.totalFeicoes() + " feições carregadas; "
+                    + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.GEOMETRIA_INVALIDA) + " inválidas/abertas, "
+                    + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.CODIGO_IMOVEL_DUPLICADO) + " códigos repetidos, "
+                    + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_DUPLICADO) + " duplicados, "
+                    + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_SOBREPOSTO) + " sobreposições.");
+
+    // mandar pra quarentena quando tiver problema fica pra Tarefa 12
 
     processoEstadoService.atualizarEstado(
             processo,
