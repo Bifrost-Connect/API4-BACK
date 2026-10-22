@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
@@ -183,9 +185,9 @@ class ArquivoControllerTest {
     }
 
     @Test
-    @DisplayName("Tarefa 2 (Gatilho Quarentena): Deve alterar situacaoAtualId para 4 (FALHOU/Quarentena) ao falhar validação")
-    void deveMoverParaQuarentenaQuandoValidacaoFalhar() throws Exception {
-        Long situacaoQuarentenaEsperada = 4L;
+    @DisplayName("Tarefa 2 (Gatilho Quarentena): Arquivo ilegível deve falhar o TRATAMENTO (situacaoAtualId = 4 / FALHOU) e responder 422")
+    void deveFalharTratamentoQuandoArquivoForIlegivel() throws Exception {
+        Long situacaoFalhouEsperada = 4L;
 
         Path arquivoInvalido = Files.createTempFile(
                 "arquivo_invalido", ".geojson");
@@ -197,19 +199,116 @@ class ArquivoControllerTest {
 
             Processo processo = processoRepository.findById(processoId)
                     .orElseThrow();
+            assertThrows(ResponseStatusException.class, () ->
+                    processoService.processarArquivo(
+                            processo,
+                            arquivoInvalido.getFileName().toString(),
+                            arquivoInvalido,
+                            1L));
 
-            Processo processoResultado = processoService.processarArquivo(
-                    processo,
-                    arquivoInvalido.getFileName().toString(),
-                    arquivoInvalido,
-                    1L);
-
-            assertEquals(
-                    situacaoQuarentenaEsperada,
-                    processoResultado.getSituacaoAtualId());
+            Long situacaoGravada = jdbcTemplate.queryForObject(
+                    "SELECT situacao_atual_id FROM processo WHERE id = ?",
+                    Long.class, processoId);
+            assertEquals(situacaoFalhouEsperada, situacaoGravada);
 
         } finally {
             Files.deleteIfExists(arquivoInvalido);
         }
-}
+    }
+
+    @Test
+    @DisplayName("Tarefa 9: EPSG detectado diferente do declarado => COM_RESSALVA, EPSG detectado gravado à parte e processamento interrompido")
+    void deveFicarComRessalvaQuandoEpsgDetectadoDivergirDoDeclarado() throws Exception {
+        Long situacaoComRessalvaEsperada = 3L; 
+
+        
+        Path arquivo = Files.createTempFile("epsg_divergente", ".geojson");
+
+        try {
+            Files.writeString(arquivo, """
+                {"type":"FeatureCollection",
+                 "crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::4674"}},
+                 "features":[]}
+                """);
+
+            Processo processo = processoRepository.findById(processoId).orElseThrow();
+
+            Processo resultado = processoService.processarArquivo(
+                    processo, arquivo.getFileName().toString(), arquivo, 1L);
+
+            assertEquals(situacaoComRessalvaEsperada, resultado.getSituacaoAtualId());
+
+            
+            assertEquals("4326", jdbcTemplate.queryForObject(
+                    "SELECT epsg_origem FROM processo WHERE id = ?", String.class, processoId));
+            assertEquals("4674", jdbcTemplate.queryForObject(
+                    "SELECT epsg_detectado FROM processo WHERE id = ?", String.class, processoId));
+
+            
+            assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM arquivo_processado WHERE processo_id = ?", Integer.class, processoId));
+
+            
+            assertTrue(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM log_processamento WHERE processo_id = ? AND nivel = 'WARNING'",
+                    Integer.class, processoId) > 0);
+
+        } finally {
+            Files.deleteIfExists(arquivo);
+        }
+    }
+
+    @Test
+    @DisplayName("Tarefa 9: EPSG confere => cópia de trabalho convertida para EPSG:4674 e registrada em arquivo_processado")
+    void deveConverterCopiaDeTrabalhoParaEpsg4674QuandoEpsgConferir() throws Exception {
+        // Processo declara 4326 e o arquivo não traz CRS (=> 4326, padrão do GeoJSON).
+        Path arquivo = Files.createTempFile("epsg_confere", ".geojson");
+        Path copia = null;
+
+        try {
+            Files.writeString(arquivo, """
+                {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"nome":"Teste"},
+                 "geometry":{"type":"Polygon","coordinates":[[[-46.633308,-23.550520],[-46.633308,-23.551520],
+                 [-46.632308,-23.551520],[-46.632308,-23.550520],[-46.633308,-23.550520]]]}}]}
+                """);
+
+            String hashOriginal = (java.util.UUID.randomUUID().toString() + java.util.UUID.randomUUID())
+                    .replace("-", "").substring(0, 64);
+            jdbcTemplate.update("""
+                INSERT INTO arquivo_original
+                    (processo_id, usuario_upload_id, nome_original, extensao, tipo_mime,
+                     tamanho_bytes, url_armazenamento, hash_sha256)
+                VALUES (?, 1, 'epsg_confere.geojson', 'geojson', 'application/json', ?, ?, ?)
+                """, processoId, Files.size(arquivo), arquivo.toString(), hashOriginal);
+
+            Processo processo = processoRepository.findById(processoId).orElseThrow();
+            processoService.processarArquivo(
+                    processo, "epsg_confere.geojson", arquivo, 1L);
+
+            assertEquals("4326", jdbcTemplate.queryForObject(
+                    "SELECT epsg_detectado FROM processo WHERE id = ?", String.class, processoId));
+            assertEquals("4674", jdbcTemplate.queryForObject(
+                    "SELECT epsg_destino FROM processo WHERE id = ?", String.class, processoId));
+
+            var registro = jdbcTemplate.queryForMap(
+                    "SELECT epsg, versao, url_armazenamento, hash_sha256 FROM arquivo_processado WHERE processo_id = ?",
+                    processoId);
+            assertEquals("4674", registro.get("epsg"));
+            assertEquals(1, registro.get("versao"));
+
+            copia = Path.of((String) registro.get("url_armazenamento"));
+            assertTrue(Files.exists(copia), "A cópia de trabalho deve existir em disco.");
+            assertTrue(Files.readString(copia).contains("urn:ogc:def:crs:EPSG::4674"),
+                    "A cópia deve declarar o CRS oficial.");
+
+            
+            assertTrue(Files.readString(arquivo).contains("-46.633308"));
+
+        } finally {
+            Files.deleteIfExists(arquivo);
+            if (copia != null) {
+                Files.deleteIfExists(copia);
+            }
+        }
+    }
 }

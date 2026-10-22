@@ -17,15 +17,74 @@ public class ArquivoProcessadoService {
 
     private final ArquivoOriginalRepository arquivoOriginalRepository;
     private final ArquivoProcessadoRepository arquivoProcessadoRepository;
+    private final PadronizacaoEpsgService padronizacaoEpsgService;
 
     private final String STORAGE_DIR = "zona_processada_storage/";
 
     public ArquivoProcessadoService(
             ArquivoOriginalRepository arquivoOriginalRepository,
-            ArquivoProcessadoRepository arquivoProcessadoRepository) {
+            ArquivoProcessadoRepository arquivoProcessadoRepository,
+            PadronizacaoEpsgService padronizacaoEpsgService) {
 
         this.arquivoOriginalRepository = arquivoOriginalRepository;
         this.arquivoProcessadoRepository = arquivoProcessadoRepository;
+        this.padronizacaoEpsgService = padronizacaoEpsgService;
+    }
+
+    public ArquivoProcessado criarCopiaPadronizada(
+            Long processoId,
+            Long etapaGeracaoId,
+            Path geoJsonOrigem,
+            String epsgDetectado) throws Exception {
+
+        ArquivoOriginal original = arquivoOriginalRepository
+                .findFirstByProcessoIdOrderByIdDesc(processoId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Nenhum arquivo original encontrado para o processo: " + processoId));
+
+        Path diretorioProcessado = Paths.get(STORAGE_DIR);
+        Files.createDirectories(diretorioProcessado);
+
+        String nomeBase = nomeSemExtensao(original.getNomeOriginal());
+        String nomeCopia = nomeBase + "_epsg" + PadronizacaoEpsgService.EPSG_OFICIAL + ".geojson";
+        Path caminhoProcessado = diretorioProcessado.resolve(System.currentTimeMillis() + "_" + nomeCopia);
+
+        // Original intocado: só le o  geoJsonOrigem e gravamos a cópia nova.
+        padronizacaoEpsgService.converterParaEpsgOficial(geoJsonOrigem, epsgDetectado, caminhoProcessado);
+
+        int proximaVersao = arquivoProcessadoRepository
+                .findFirstByProcessoIdOrderByVersaoDesc(processoId)
+                .map(ultimo -> ultimo.getVersao() + 1)
+                .orElse(1);
+
+        ArquivoProcessado processado = new ArquivoProcessado();
+        processado.setArquivoOriginalId(original.getId());
+        processado.setProcessoId(processoId);
+        processado.setEtapaGeracaoId(etapaGeracaoId);
+        processado.setNomeArquivo(nomeCopia);
+        processado.setFormato("geojson");
+        processado.setUrlArmazenamento(caminhoProcessado.toString());
+        // o original continua em arquivo_original.
+        processado.setHashSha256(padronizacaoEpsgService.calcularSha256(caminhoProcessado));
+        processado.setEpsg(PadronizacaoEpsgService.EPSG_OFICIAL);
+        processado.setVersao(proximaVersao);
+
+        try {
+            return arquivoProcessadoRepository.save(processado);
+        } catch (RuntimeException e) {
+            Files.deleteIfExists(caminhoProcessado); // evita arquivo perdido se o registro falhar
+            throw e;
+        }
+    }
+
+    private String nomeSemExtensao(String nome) {
+        String base = nome == null || nome.isBlank() ? "arquivo" : Paths.get(nome).getFileName().toString();
+        int ponto = base.lastIndexOf('.');
+        if (ponto > 0) {
+            base = base.substring(0, ponto);
+        }
+        String seguro = base.replaceAll("[^A-Za-z0-9._-]", "_");
+        return seguro.isBlank() ? "arquivo" : seguro;
     }
 
     public ArquivoProcessado criarCopiaProcessada(

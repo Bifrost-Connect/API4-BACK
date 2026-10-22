@@ -9,12 +9,23 @@ import java.util.regex.Pattern;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class GeoJsonEpsgService {
-    private static final Pattern EPSG_PATTERN = Pattern.compile("(?i)(?:EPSG(?::|::|/|%3A)+|::)([0-9]{4,6})");
+
+    public static final String EPSG_PADRAO_SEM_CRS = "4326";
+
+    
+    private static final Pattern EPSG_PATTERN = Pattern.compile(
+            "(?i)EPSG(?::|%3A|/)+(?:[0-9]+(?:\\.[0-9]+)*(?::|%3A|/)+)?([0-9]{4,6})(?![0-9])");
+
+    private static final Pattern DOIS_PONTOS_PATTERN = Pattern.compile("::([0-9]{4,6})(?![0-9])");
+    private static final Pattern CRS84_PATTERN = Pattern.compile("(?i)(?:^|[:/])CRS84$");
+
     private final ObjectMapper mapper = new ObjectMapper();
     private final JdbcTemplate jdbcTemplate;
 
@@ -26,23 +37,73 @@ public class GeoJsonEpsgService {
         if (arquivo == null || !arquivo.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".geojson")) {
             throw new IllegalArgumentException("A etapa de EPSG aceita somente arquivos .geojson.");
         }
-        try {
-            JsonNode root = mapper.readTree(arquivo.toFile());
-            if (root == null || !root.isObject() || !"FeatureCollection".equals(root.path("type").asText())) {
+
+        String tipo = null;
+        boolean crsDeclarado = false;
+        String nomeCrs = "";
+
+        try (JsonParser parser = mapper.getFactory().createParser(arquivo.toFile())) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new IllegalArgumentException("GeoJSON inválido: esperado um FeatureCollection.");
             }
-            JsonNode crs = root.path("crs");
-            if (crs.isMissingNode() || crs.isNull()) {
-                return "4326";
+
+            while (parser.nextToken() == JsonToken.FIELD_NAME) {
+                String campo = parser.currentName();
+                JsonToken valor = parser.nextToken();
+
+                if ("type".equals(campo) && valor == JsonToken.VALUE_STRING) {
+                    tipo = parser.getText();
+                } else if ("crs".equals(campo) && valor != JsonToken.VALUE_NULL) {
+                    crsDeclarado = true;
+                    nomeCrs = extrairNomeCrs(mapper.readTree(parser));
+                } else {
+                    parser.skipChildren();
+                }
             }
-            String nome = crs.path("properties").path("name").asText("");
-            if (nome.isBlank()) nome = crs.path("name").asText("");
-            Matcher matcher = EPSG_PATTERN.matcher(nome);
-            if (matcher.find()) return matcher.group(1);
-            throw new IllegalArgumentException("O GeoJSON declara um CRS que não pôde ser interpretado: " + nome);
         } catch (IOException e) {
             throw new IllegalArgumentException("Não foi possível ler o GeoJSON para verificar o EPSG.", e);
         }
+
+        if (!"FeatureCollection".equals(tipo)) {
+            throw new IllegalArgumentException("GeoJSON inválido: esperado um FeatureCollection.");
+        }
+        if (!crsDeclarado) {
+            return EPSG_PADRAO_SEM_CRS;
+        }
+
+        String codigo = interpretarCrs(nomeCrs);
+        if (codigo == null) {
+            throw new IllegalArgumentException("O GeoJSON declara um CRS que não pôde ser interpretado: " + nomeCrs);
+        }
+        return codigo;
+    }
+
+    private String extrairNomeCrs(JsonNode crs) {
+        String nome = crs.path("properties").path("name").asText("");
+        if (nome.isBlank()) {
+            nome = crs.path("name").asText("");
+        }
+        return nome;
+    }
+
+    /** Retorna o código EPSG (so os números) ou null se não for possível interpretar. */
+    static String interpretarCrs(String nome) {
+        if (nome == null || nome.isBlank()) {
+            return null;
+        }
+        String texto = nome.trim();
+        Matcher matcher = EPSG_PATTERN.matcher(texto);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        if (CRS84_PATTERN.matcher(texto).find()) {
+            return "4326";
+        }
+        Matcher fallback = DOIS_PONTOS_PATTERN.matcher(texto);
+        if (fallback.find()) {
+            return fallback.group(1);
+        }
+        return null;
     }
 
     public void validarCodigoEpsg(String epsg) {

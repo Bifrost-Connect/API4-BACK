@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.nio.file.Files;
 
+import com.bifrostconnect.api_geo.entity.ArquivoProcessado;
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
 
@@ -26,6 +27,8 @@ public class ProcessoService {
     private final ProcessoEstadoService processoEstadoService;
     private final GeoJsonEpsgService geoJsonEpsgService;
     private final GeoJsonArquivoService geoJsonArquivoService;
+    private final PadronizacaoEpsgService padronizacaoEpsgService;
+    private final ArquivoProcessadoService arquivoProcessadoService;
 
     public ProcessoService(
             ProcessoRepository processoRepository,
@@ -33,7 +36,9 @@ public class ProcessoService {
             AuditoriaLogService auditoriaLogService,
             ProcessoEstadoService processoEstadoService,
             GeoJsonEpsgService geoJsonEpsgService,
-            GeoJsonArquivoService geoJsonArquivoService
+            GeoJsonArquivoService geoJsonArquivoService,
+            PadronizacaoEpsgService padronizacaoEpsgService,
+            ArquivoProcessadoService arquivoProcessadoService
         ) {
 
         this.processoRepository = processoRepository;
@@ -42,6 +47,8 @@ public class ProcessoService {
         this.processoEstadoService = processoEstadoService;
         this.geoJsonEpsgService = geoJsonEpsgService;
         this.geoJsonArquivoService = geoJsonArquivoService;
+        this.padronizacaoEpsgService = padronizacaoEpsgService;
+        this.arquivoProcessadoService = arquivoProcessadoService;
     }
 
     public Processo buscarPorId(Long id) {
@@ -85,7 +92,12 @@ public class ProcessoService {
     }
 
 
-    @Transactional
+    /*
+     * noRollbackFor: quando a etapa termina em falha controlada (422/415) o log de erro, a
+     * auditoria e o EPSG detectado já gravados NÃO podem ser desfeitos pelo rollback - senão
+     * o processo ficaria FALHOU sem nenhuma explicação registrada.
+     */
+    @Transactional(noRollbackFor = ResponseStatusException.class)
     public Processo processarArquivo(
         Processo processo,
         String nomeArquivo,
@@ -107,7 +119,7 @@ public class ProcessoService {
 
         return processarArquivoGeoJson(
                 processo,
-                caminhoGeoJson.getFileName().toString(),
+                nomeArquivo,
                 caminhoGeoJson,
                 usuarioId);
 
@@ -133,7 +145,7 @@ public class ProcessoService {
             } catch (java.io.IOException e) {
                 auditoriaLogService.registrarLog(
                         processo,
-                        "WARN",
+                        "WARNING",
                         "Não foi possível excluir o GeoJSON temporário: "
                                 + e.getMessage());
             }
@@ -141,59 +153,46 @@ public class ProcessoService {
     }
 }
 
+    /** ETAPA TRATAMENTO padroniza e checagem de EPSG. */
     private Processo processarArquivoGeoJson(
         Processo processo,
-        String nomeArquivo,
-        Path caminhoArquivo,
+        String nomeOriginal,
+        Path caminhoGeoJson,
         Long usuarioId) {
-
-    // Valida o EPSG declarado e detecta o EPSG do arquivo.
-    try {
-        geoJsonEpsgService.validarCodigoEpsg(
-                processo.getEpsgOrigem());
-
-        String epsgDeclarado = processo.getEpsgOrigem()
-                .trim()
-                .toUpperCase(java.util.Locale.ROOT);
-
-        if (epsgDeclarado.startsWith("EPSG:")) {
-            epsgDeclarado = epsgDeclarado.substring(5);
-        }
-
-        String epsgDetectado = geoJsonEpsgService.detectar(caminhoArquivo);
-
-        if (!epsgDeclarado.equals(epsgDetectado)) {
-
-    String mensagem = "Divergência de EPSG: declarado EPSG:"
-            + epsgDeclarado
-            + ", detectado EPSG:"
-            + epsgDetectado
-            + ". Tratamento bloqueado. Corrija manualmente o cadastro "
-            + "ou o arquivo e envie novamente para validação.";
 
     processoEstadoService.atualizarEstado(
             processo,
             "TRATAMENTO",
-            "COM_RESSALVA",
-            mensagem);
+            "EM_ANDAMENTO",
+            "Tratamento iniciado: padronização e checagem de EPSG.");
 
     auditoriaLogService.registrarLog(
             processo,
-            "WARN",
-            mensagem);
+            "INFO",
+            "Iniciando fluxo do processo para o arquivo: " + nomeOriginal);
 
     auditoriaLogService.registrarAuditoria(
             usuarioId,
-            "DIVERGENCIA_EPSG",
-            "Processo ID: " + processo.getId()
-                    + "; declarado=" + epsgDeclarado
-                    + "; detectado=" + epsgDetectado);
+            "INICIO_PROCESSO",
+            "Processo ID: " + processo.getId());
 
-    return salvarGarantindoCampos(processo);
-}
+    String epsgDeclarado = null;
+    String epsgDetectado = null;
+    ArquivoProcessado copiaTrabalho;
 
-        // Mantém o comportamento atual para divergências de EPSG.
-        if (!epsgDeclarado.equals(epsgDetectado)) {
+    try {
+        epsgDeclarado = padronizacaoEpsgService.normalizarEpsg(processo.getEpsgOrigem());
+        geoJsonEpsgService.validarCodigoEpsg(epsgDeclarado);
+
+        epsgDetectado = geoJsonEpsgService.detectar(caminhoGeoJson);
+
+        // EPSG detectado fica em coluna própria, separada do declarado (epsg_origem).
+        processo.setEpsgDetectado(epsgDetectado);
+
+        PadronizacaoEpsgService.ResultadoChecagem checagem =
+                padronizacaoEpsgService.comparar(epsgDeclarado, epsgDetectado);
+
+        if (checagem.divergente()) {
 
             String mensagem = "Divergência de EPSG: declarado EPSG:"
                     + epsgDeclarado
@@ -210,7 +209,7 @@ public class ProcessoService {
 
             auditoriaLogService.registrarLog(
                     processo,
-                    "WARN",
+                    "WARNING",
                     mensagem);
 
             auditoriaLogService.registrarAuditoria(
@@ -220,26 +219,39 @@ public class ProcessoService {
                             + "; declarado=" + epsgDeclarado
                             + "; detectado=" + epsgDetectado);
 
+            // Interrompido: sem cópia de trabalho e sem validações.
             return salvarGarantindoCampos(processo);
         }
+
+        geoJsonEpsgService.validarCodigoEpsg(epsgDetectado);
+
+        copiaTrabalho = arquivoProcessadoService.criarCopiaPadronizada(
+                processo.getId(),
+                processo.getEtapaAtualId(), // TRATAMENTO: etapa que gerou a cópia
+                caminhoGeoJson,
+                epsgDetectado);
+
+        processo.setEpsgDestino(PadronizacaoEpsgService.EPSG_OFICIAL);
 
     } catch (ResponseStatusException e) {
         throw e;
 
     } catch (Exception e) {
-        String mensagem = "Falha na verificação do EPSG/GeoJSON: "
+        String mensagem = "Falha na padronização/verificação do EPSG: "
                 + e.getMessage();
-
-        auditoriaLogService.registrarLog(
-                processo,
-                "ERROR",
-                mensagem);
 
         processoEstadoService.atualizarEstado(
                 processo,
                 "TRATAMENTO",
                 "FALHOU",
                 mensagem);
+
+        auditoriaLogService.registrarLog(
+                processo,
+                "ERROR",
+                mensagem);
+
+        salvarGarantindoCampos(processo);
 
         throw new ResponseStatusException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
@@ -250,18 +262,10 @@ public class ProcessoService {
     auditoriaLogService.registrarLog(
             processo,
             "INFO",
-            "Iniciando fluxo do processo para o arquivo: " + nomeArquivo);
-
-    auditoriaLogService.registrarAuditoria(
-            usuarioId,
-            "INICIO_PROCESSO",
-            "Processo ID: " + processo.getId());
-
-    processoEstadoService.atualizarEstado(
-            processo,
-            "TRATAMENTO",
-            "EM_ANDAMENTO",
-            "Ingestão concluída. Iniciando tratamento do arquivo.");
+            "EPSG padronizado: declarado EPSG:" + epsgDeclarado
+                    + ", detectado EPSG:" + epsgDetectado
+                    + ", cópia de trabalho em EPSG:" + PadronizacaoEpsgService.EPSG_OFICIAL
+                    + " (arquivo_processado ID: " + copiaTrabalho.getId() + ").");
 
     processoEstadoService.atualizarEstado(
             processo,
@@ -269,10 +273,12 @@ public class ProcessoService {
             "EM_ANDAMENTO",
             "Tratamento concluído. Iniciando validações.");
 
+    Path caminhoCopia = Path.of(copiaTrabalho.getUrlArmazenamento());
+
     boolean valido = validacaoService.executarValidacoes(
             processo,
-            nomeArquivo,
-            caminhoArquivo);
+            copiaTrabalho.getNomeArquivo(),
+            caminhoCopia);
 
     if (!valido) {
         processoEstadoService.atualizarEstado(
