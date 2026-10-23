@@ -14,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.nio.file.Files;
 
+import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico;
 import com.bifrostconnect.api_geo.dto.ResultadoValidacaoTopologica;
 import com.bifrostconnect.api_geo.entity.ArquivoProcessado;
 import com.bifrostconnect.api_geo.entity.Processo;
@@ -31,6 +32,7 @@ public class ProcessoService {
     private final PadronizacaoEpsgService padronizacaoEpsgService;
     private final ArquivoProcessadoService arquivoProcessadoService;
     private final ValidacaoTopologicaService validacaoTopologicaService;
+    private final CalculoAnaliticoService calculoAnaliticoService;
 
     public ProcessoService(
             ProcessoRepository processoRepository,
@@ -41,7 +43,8 @@ public class ProcessoService {
             GeoJsonArquivoService geoJsonArquivoService,
             PadronizacaoEpsgService padronizacaoEpsgService,
             ArquivoProcessadoService arquivoProcessadoService,
-            ValidacaoTopologicaService validacaoTopologicaService
+            ValidacaoTopologicaService validacaoTopologicaService,
+            CalculoAnaliticoService calculoAnaliticoService
         ) {
 
         this.processoRepository = processoRepository;
@@ -53,6 +56,7 @@ public class ProcessoService {
         this.padronizacaoEpsgService = padronizacaoEpsgService;
         this.arquivoProcessadoService = arquivoProcessadoService;
         this.validacaoTopologicaService = validacaoTopologicaService;
+        this.calculoAnaliticoService = calculoAnaliticoService;
     }
 
     public Processo buscarPorId(Long id) {
@@ -315,6 +319,53 @@ public class ProcessoService {
                     + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.CODIGO_IMOVEL_DUPLICADO) + " códigos repetidos, "
                     + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_DUPLICADO) + " duplicados, "
                     + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_SOBREPOSTO) + " sobreposições.");
+
+    // 3ª parte do Tratamento: área de cada polígono válido e cruzamento com APP, RL e Alertas
+    processoEstadoService.atualizarEstado(
+            processo,
+            "TRATAMENTO",
+            "EM_ANDAMENTO",
+            "Tratamento: cálculo de área e cruzamentos espaciais.");
+
+    ResultadoCalculoAnalitico calculo;
+
+    try {
+        calculo = calculoAnaliticoService.calcular(processo, copiaTrabalho);
+
+    } catch (Exception e) {
+        String mensagem = "Falha no cálculo analítico dos polígonos: "
+                + e.getMessage();
+
+        processoEstadoService.atualizarEstado(
+                processo,
+                "TRATAMENTO",
+                "FALHOU",
+                mensagem);
+
+        auditoriaLogService.registrarLog(
+                processo,
+                "ERROR",
+                mensagem);
+
+        salvarGarantindoCampos(processo);
+
+        throw new ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                mensagem,
+                e);
+    }
+
+    auditoriaLogService.registrarLog(
+            processo,
+            "INFO",
+            "Cálculo analítico: " + calculo.poligonosCalculados() + " polígonos válidos somando "
+                    + calculo.areaTotalHectares().toPlainString() + " ha; sobreposição com APP "
+                    + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.APP).toPlainString() + " ha ("
+                    + calculo.contar(ResultadoCalculoAnalitico.Categoria.APP) + " cruzamentos), Reserva Legal "
+                    + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL).toPlainString() + " ha ("
+                    + calculo.contar(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL) + " cruzamentos), Alertas "
+                    + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.ALERTA).toPlainString() + " ha ("
+                    + calculo.contar(ResultadoCalculoAnalitico.Categoria.ALERTA) + " cruzamentos).");
 
     // mandar pra quarentena quando tiver problema fica pra Tarefa 12
 
