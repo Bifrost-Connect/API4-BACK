@@ -1,14 +1,14 @@
 package com.bifrostconnect.api_geo.integration;
 
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -16,12 +16,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
 import com.jayway.jsonpath.JsonPath;
 
 @SpringBootTest
-@TestPropertySource(properties = "spring.flyway.clean-disabled=false")
+@Transactional
 public class CargaIntegrationTest {
 
     private MockMvc mockMvc;
@@ -32,41 +33,34 @@ public class CargaIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    @Autowired
-    private Flyway flyway; // ARQUITETURA: Motor de migração injetado
-
     private Long processoTesteId;
-    private static boolean bancoRestaurado = false;
 
     @BeforeEach
     public void setUp() {
-        // CURA AUTOMÁTICA DO BANCO DE DADOS
-        if (!bancoRestaurado) {
-            flyway.clean();
-            flyway.migrate();
-            bancoRestaurado = true;
-        }
-
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
 
+        // 1. Insere o Órgão com ID 1
         jdbcTemplate.update("""
             INSERT INTO orgao (id, nome, sigla, ativo) 
             VALUES (1, 'Órgão Teste', 'OT', true) 
             ON CONFLICT (id) DO NOTHING;
         """);
 
+        // 2. Insere o Conjunto com ID 1
         jdbcTemplate.update("""
             INSERT INTO conjunto (id, nome, ativo) 
             VALUES (1, 'Conjunto Teste', true) 
             ON CONFLICT (id) DO NOTHING;
         """);
 
+        // 3. Insere o Perfil com ID 1
         jdbcTemplate.update("""
             INSERT INTO perfil (id, nome, descricao) 
             VALUES (1, 'OPERADOR', 'Responsavel pela entrada das cargas') 
             ON CONFLICT (id) DO NOTHING;
         """);
 
+        // 4. Insere o Usuário com ID 1
         jdbcTemplate.update("""
             INSERT INTO usuario (id, nome, email, senha_hash, perfil_id, ativo) 
             VALUES (1, 'Operador Teste', 'teste@bifrostconnect.com', 'hash_exemplo', 1, true) 
@@ -75,11 +69,13 @@ public class CargaIntegrationTest {
     }
 
     @AfterEach
-    void tearDown() {
-        jdbcTemplate.execute("TRUNCATE TABLE processo, auditoria RESTART IDENTITY CASCADE");
+    public void tearDown() {
+        // O @Transactional da classe já faz o rollback de tudo automaticamente.
+        // Removidos os comandos DELETE para respeitar a trigger de imutabilidade (RN02) da tabela arquivo_original.
     }
 
     @Test
+    @WithMockUser(username = "operador", roles = "OPERADOR")
     public void deveCriarMetadadosEEncontrarNaListagem() throws Exception {
         String jsonRequest = """
             {
@@ -91,6 +87,7 @@ public class CargaIntegrationTest {
             }
         """;
 
+        // 1. Testa o cadastro de metadados via CargaController (/carga/metadados)
         MvcResult resultPost = mockMvc.perform(post("/carga/metadados")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonRequest))
@@ -100,11 +97,25 @@ public class CargaIntegrationTest {
                 .andExpect(jsonPath("$.situacaoAtualId").isNumber())
                 .andReturn();
 
+        // Extrai o ID do Processo retornado
         String responseContent = resultPost.getResponse().getContentAsString();
         Integer idCriado = JsonPath.read(responseContent, "$.id");
         this.processoTesteId = idCriado.longValue();
 
+        // 2. Testa a listagem de processos via ProcessoController (/processos)
         mockMvc.perform(get("/processos"))
                 .andExpect(status().isOk());
     }
+
+    /*@Test
+    @DisplayName("Tarefa 2: Deve alterar situacao_atual_id no banco para Quarentena após processar arquivo inválido")
+    public void deveAtualizarBancoParaQuarentena() throws Exception {
+        // Executa a requisição de processamento passando um arquivo com falhas
+        mockMvc.perform(post("/processos/1/processar")
+                        .param("nomeArquivo", "arquivo_com_erro.zip")
+                        .param("usuarioId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.situacaoAtualId").value(3)); // 3 = QUARENTENA
+    }*/
+
 }
