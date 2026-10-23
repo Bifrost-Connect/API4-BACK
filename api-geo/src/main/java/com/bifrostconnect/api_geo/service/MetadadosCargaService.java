@@ -49,7 +49,7 @@ public class MetadadosCargaService {
             throw new IllegalArgumentException("O ano da safra deve ser um valor numérico");
         }
 
-        if (!request.getEpsgOrigem().equals("4674") && !request.getEpsgOrigem().equals("4326")) {
+        if (request.getEpsgOrigem() != null && !request.getEpsgOrigem().equals("4674") && !request.getEpsgOrigem().equals("4326")) {
             throw new IllegalArgumentException("O EPSG de origem deve ser 4674 ou 4326");
         }
     }

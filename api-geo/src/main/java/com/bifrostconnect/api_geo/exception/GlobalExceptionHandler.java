@@ -57,6 +57,16 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.UNPROCESSABLE_ENTITY)
+    // US09 - Tarefa 8: ID inexistente sai sempre no mesmo formato { "erro": ... } com 404
+    @ExceptionHandler(RecursoNaoEncontradoException.class)
+    public ResponseEntity<Map<String, String>> handleRecursoNaoEncontrado(
+            RecursoNaoEncontradoException ex) {
+
+        Map<String, String> error = new HashMap<>();
+        error.put("erro", ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
                 .body(error);
     }
 

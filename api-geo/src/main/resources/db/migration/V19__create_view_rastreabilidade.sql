@@ -38,7 +38,7 @@ BEGIN
       SELECT FROM pg_catalog.pg_roles
       WHERE  rolname = 'auditor_ambiental') THEN
 
-      CREATE ROLE auditor_ambiental LOGIN;
+      CREATE ROLE auditor_ambiental LOGIN PASSWORD 'auditor123';
    END IF;
 END
 $do$;

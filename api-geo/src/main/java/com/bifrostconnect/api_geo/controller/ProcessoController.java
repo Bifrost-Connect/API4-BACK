@@ -31,6 +31,8 @@ import com.bifrostconnect.api_geo.exception.FalhaGeoespacialException;
 import com.bifrostconnect.api_geo.repository.ArquivoOriginalRepository;
 import com.bifrostconnect.api_geo.service.ProcessoDashboardService;
 import com.bifrostconnect.api_geo.service.ProcessoService;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.http.HttpStatus;
 
 @RestController
 @RequestMapping({"/processos", "/api/processos"})
@@ -92,7 +94,7 @@ public class ProcessoController {
         return ResponseEntity.ok(processoService.listarAuditoresReais());
     }
 
-    // --- TAREFA 5: Endpoint para associar o editor e alterar a situação para EM_ANDAMENTO ---
+   // --- TAREFA 5: Endpoint para associar o editor e alterar a situação para EM_ANDAMENTO ---
     @PutMapping("/{id}/editor")
     public ResponseEntity<Processo> alocarEditor(
             @PathVariable Long id,
@@ -190,5 +192,10 @@ public class ProcessoController {
                                     + e.getMessage()
                     );
         }
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<String> handleIllegalState(IllegalStateException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
     }
 }

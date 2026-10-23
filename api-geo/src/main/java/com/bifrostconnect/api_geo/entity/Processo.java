@@ -7,22 +7,31 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 @Entity
 @Table(name = "processo")
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Processo {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Builder.Default
     @Column(name = "data_criacao")
     private LocalDateTime dataCriacao = LocalDateTime.now();
 
-    @jakarta.persistence.PrePersist
+    @PrePersist
     protected void onCreate() {
         if (this.dataCriacao == null) {
             this.dataCriacao = LocalDateTime.now();
