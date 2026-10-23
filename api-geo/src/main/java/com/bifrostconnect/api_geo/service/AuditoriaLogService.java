@@ -35,11 +35,12 @@ public class AuditoriaLogService {
     }
 
     // Tarefa 15: mesmo log, mas com código de erro e detalhe técnico (usado pela Quarentena geoespacial)
-    public void registrarLog(Processo processo, String nivel, String mensagem, String codigoErro, String detalhes) {
     public void registrarLog(
-            Processo processo,
-            String nivel,
-            String mensagem) {
+            Processo processo, 
+            String nivel, 
+            String mensagem, 
+            String codigoErro, 
+            String detalhes) {
 
         LogProcessamento log = new LogProcessamento();
 

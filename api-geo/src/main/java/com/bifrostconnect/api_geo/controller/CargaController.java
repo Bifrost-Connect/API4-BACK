@@ -49,18 +49,18 @@ public class CargaController {
     private final ArquivoUploadService arquivoUploadService;
     private final AuditoriaLogService auditoriaLogService;
     private final CalculoAnaliticoService calculoAnaliticoService;
-
     private final LinhagemService linhagemService;
     private final ExportacaoRejeicoesService exportacaoRejeicoesService; 
     private final EncaminhamentoQuarentenaService encaminhamentoQuarentenaService;    
     private final ReprocessamentoCargaService reprocessamentoCargaService;
     private final CancelamentoCargaService cancelamentoCargaService;
     
+    // Construtor unificado corrigido
     public CargaController(
             MetadadosCargaService metadadosCargaService,
             ArquivoUploadService arquivoUploadService,
             AuditoriaLogService auditoriaLogService,
-            CalculoAnaliticoService calculoAnaliticoService) {
+            CalculoAnaliticoService calculoAnaliticoService,
             LinhagemService linhagemService,
             ExportacaoRejeicoesService exportacaoRejeicoesService,
             EncaminhamentoQuarentenaService encaminhamentoQuarentenaService,
@@ -71,8 +71,12 @@ public class CargaController {
         this.arquivoUploadService = arquivoUploadService;
         this.auditoriaLogService = auditoriaLogService;
         this.calculoAnaliticoService = calculoAnaliticoService;
+        this.linhagemService = linhagemService;
+        this.exportacaoRejeicoesService = exportacaoRejeicoesService; 
+        this.encaminhamentoQuarentenaService = encaminhamentoQuarentenaService;
+        this.reprocessamentoCargaService = reprocessamentoCargaService;
+        this.cancelamentoCargaService = cancelamentoCargaService;
     }
-
 
     @GetMapping("/{id}/calculos")
     public ResponseEntity<?> consultarCalculos(@PathVariable Long id) {
@@ -84,14 +88,6 @@ public class CargaController {
             return ResponseEntity.status(e.getStatusCode()).body(
                     Map.of("erro", e.getReason() == null ? "Falha ao consultar os cálculos da carga." : e.getReason()));
         }
-    }
-
-    //Recebe, valida e persiste os metadados.
-        this.linhagemService = linhagemService;
-        this.exportacaoRejeicoesService = exportacaoRejeicoesService; 
-        this.encaminhamentoQuarentenaService = encaminhamentoQuarentenaService;
-        this.reprocessamentoCargaService = reprocessamentoCargaService;
-        this.cancelamentoCargaService = cancelamentoCargaService;
     }
 
     // Tarefa 3 e 5: Recebe, valida e persiste os metadados.
@@ -107,7 +103,6 @@ public class CargaController {
                 .body(processoSalvo);
     }
 
-    // Recebe o arquivo, realiza o upload e registra na auditoria.
     // Tarefa 4, 5 e 7: Recebe o arquivo, realiza o upload e registra na auditoria.
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
     @PostMapping("/upload")

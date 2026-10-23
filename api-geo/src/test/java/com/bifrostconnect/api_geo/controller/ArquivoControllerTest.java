@@ -22,7 +22,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -32,7 +31,6 @@ import com.bifrostconnect.api_geo.service.ProcessoService;
 import com.bifrostconnect.api_geo.service.ValidacaoService;
 
 @SpringBootTest
-@Transactional
 class ArquivoControllerTest {
 
     private MockMvc mockMvc;
@@ -57,6 +55,9 @@ class ArquivoControllerTest {
     @BeforeEach
     void setUp() {
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+
+        // Limpeza com TRUNCATE CASCADE para ignorar as triggers de bloqueio de DELETE (imutabilidade)
+        jdbcTemplate.execute("TRUNCATE TABLE processo, arquivo_original, arquivo_processado, feicao_carga, resultados_calculos, historico_aprovacoes_gestor, log_processamento, log_validacao, auditoria, processo_etapa CASCADE");
 
         // Insere todas as etapas exigidas pelo fluxo de processamento
         jdbcTemplate.update("INSERT INTO etapa (id, nome, ordem, descricao) VALUES (1, 'CARGA_E_VALIDACAO', 1, 'Carga') ON CONFLICT (id) DO NOTHING;");
@@ -95,7 +96,7 @@ class ArquivoControllerTest {
             ON CONFLICT (id) DO NOTHING;
         """);
 
-        // Inserção direta via JdbcTemplate garantindo existência física imediata no banco e evitando o erro de FK
+        // Este insert será persistido imediatamente e ficará visível para as transações internas (REQUIRES_NEW)
         this.processoId = jdbcTemplate.queryForObject(
             """
             INSERT INTO processo (ano_safra, epsg_origem, epsg_destino, orgao_id, operador_id, conjunto_id, situacao_atual_id, etapa_atual_id, data_criacao)
@@ -206,7 +207,6 @@ class ArquivoControllerTest {
     void deveFicarComRessalvaQuandoEpsgDetectadoDivergirDoDeclarado() throws Exception {
         Long situacaoComRessalvaEsperada = 3L; 
 
-        
         Path arquivo = Files.createTempFile("epsg_divergente", ".geojson");
 
         try {
@@ -223,17 +223,14 @@ class ArquivoControllerTest {
 
             assertEquals(situacaoComRessalvaEsperada, resultado.getSituacaoAtualId());
 
-            
             assertEquals("4326", jdbcTemplate.queryForObject(
                     "SELECT epsg_origem FROM processo WHERE id = ?", String.class, processoId));
             assertEquals("4674", jdbcTemplate.queryForObject(
                     "SELECT epsg_detectado FROM processo WHERE id = ?", String.class, processoId));
 
-            
             assertEquals(0, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM arquivo_processado WHERE processo_id = ?", Integer.class, processoId));
 
-            
             assertTrue(jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM log_processamento WHERE processo_id = ? AND nivel = 'WARNING'",
                     Integer.class, processoId) > 0);
@@ -246,7 +243,6 @@ class ArquivoControllerTest {
     @Test
     @DisplayName("Tarefa 9: EPSG confere => cópia de trabalho convertida para EPSG:4674 e registrada em arquivo_processado")
     void deveConverterCopiaDeTrabalhoParaEpsg4674QuandoEpsgConferir() throws Exception {
-        // Processo declara 4326 e o arquivo não traz CRS (=> 4326, padrão do GeoJSON).
         Path arquivo = Files.createTempFile("epsg_confere", ".geojson");
         Path copia = null;
 
@@ -286,7 +282,6 @@ class ArquivoControllerTest {
             assertTrue(Files.readString(copia).contains("urn:ogc:def:crs:EPSG::4674"),
                     "A cópia deve declarar o CRS oficial.");
 
-            
             assertTrue(Files.readString(arquivo).contains("-46.633308"));
 
         } finally {
@@ -303,7 +298,6 @@ class ArquivoControllerTest {
         Long etapaTratamento = 2L;
         Long situacaoEmValidacao = 2L;
 
-        // CAR-B começa no meio do CAR-A, então metade de um cai dentro do outro
         Path arquivo = Files.createTempFile("sobreposicao", ".geojson");
         Path copia = null;
 
@@ -336,7 +330,6 @@ class ArquivoControllerTest {
             assertEquals(situacaoEmValidacao, jdbcTemplate.queryForObject(
                     "SELECT situacao_atual_id FROM processo WHERE id = ?", Long.class, processoId));
 
-            // parou antes do cálculo: nada de área nem cruzamento gravado
             assertEquals(0, jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM resultados_calculos WHERE processo_id = ?", Integer.class, processoId));
             assertEquals(0, jdbcTemplate.queryForObject("""
@@ -363,7 +356,6 @@ class ArquivoControllerTest {
     @Test
     @DisplayName("Tarefa 13: GET /api/cargas/{id}/calculos devolve área total, área por polígono, interseções e alertas do Tratamento")
     void deveConsultarCalculosDaCarga() throws Exception {
-        // dois imóveis lado a lado (sem sobreposição) e um embargo pegando só um pedaço do CAR-A
         Path arquivo = Files.createTempFile("calculos_carga", ".geojson");
         Path copia = null;
 
@@ -438,7 +430,6 @@ class ArquivoControllerTest {
     @Test
     @DisplayName("Tarefa 14: POST /api/analise/cruzamento lista as propriedades e hectares afetados das bases publicadas")
     void deveCruzarBasesPublicadas() throws Exception {
-        // mesmo cenário da Tarefa 13: o embargo pega só um pedaço do CAR-A
         Path arquivo = Files.createTempFile("cruzamento_analise", ".geojson");
         Path copia = null;
 
@@ -475,14 +466,12 @@ class ArquivoControllerTest {
             copia = Path.of(jdbcTemplate.queryForObject(
                     "SELECT url_armazenamento FROM arquivo_processado WHERE processo_id = ?", String.class, processoId));
 
-            // antes de publicar a carga não pode entrar no cruzamento
             mockMvc.perform(post("/api/analise/cruzamento")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"processoIds\":[" + processoId + "]}"))
                     .andExpect(status().isUnprocessableEntity())
                     .andExpect(jsonPath("$.erro").exists());
 
-            // publica do jeito que a V22 exige: aprovação do gestor na PUBLICACAO e depois fecha a versão
             jdbcTemplate.update("""
                 INSERT INTO historico_aprovacoes_gestor (processo_id, gestor_id, etapa_avaliada, decisao)
                 VALUES (?, 1, 'PUBLICACAO', 'APROVADO')
@@ -508,7 +497,6 @@ class ArquivoControllerTest {
                     .andExpect(jsonPath("$.propriedades[0].sobreposicoes[0].codigoAlerta").value("EMB-T14"))
                     .andExpect(jsonPath("$.totaisPorCategoria.ALERTA.quantidade").value(1));
 
-            // só APP: o embargo fica de fora e ninguém aparece afetado
             mockMvc.perform(post("/api/analise/cruzamento")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"processoIds\":[" + processoId + "],\"categorias\":[\"APP\"]}"))
@@ -523,24 +511,35 @@ class ArquivoControllerTest {
                 Files.deleteIfExists(copia);
             }
         }
+    }
+
+    @Test
     @DisplayName("Tarefa 2 (Gatilho Quarentena): Deve alterar situacaoAtualId para 4 (FALHOU/Quarentena) ao falhar validação")
     @WithMockUser(username = "operador", roles = "OPERADOR")
     void deveMoverParaQuarentenaQuandoValidacaoFalhar() throws Exception {
         Long situacaoQuarentenaEsperada = 4L;
 
-        Path arquivoInvalido = Files.createTempFile("arquivo_invalido", ".txt");
+        Path arquivoInvalido = Files.createTempFile("arquivo_invalido", ".geojson");
         Files.writeString(arquivoInvalido, "Conteudo invalido para geojson");
 
         Processo processo = processoRepository.findById(processoId).orElseThrow();
 
-        Processo processoResultado = processoService.processarArquivo(
-                processo, 
-                "arquivo_invalido.txt", 
-                arquivoInvalido, 
-                1L
+        // O serviço lança a exceção ao tentar extrair o EPSG de um JSON inválido
+        assertThrows(ResponseStatusException.class, () -> 
+            processoService.processarArquivo(
+                    processo, 
+                    "arquivo_invalido.geojson", 
+                    arquivoInvalido, 
+                    1L
+            )
         );
 
-        assertEquals(situacaoQuarentenaEsperada, processoResultado.getSituacaoAtualId());
+        // Garantimos que, mesmo com a exceção, o processo foi enviado para a Quarentena (4)
+        Long situacaoGravada = jdbcTemplate.queryForObject(
+                "SELECT situacao_atual_id FROM processo WHERE id = ?",
+                Long.class, processoId);
+                
+        assertEquals(situacaoQuarentenaEsperada, situacaoGravada);
 
         Files.deleteIfExists(arquivoInvalido);
     }

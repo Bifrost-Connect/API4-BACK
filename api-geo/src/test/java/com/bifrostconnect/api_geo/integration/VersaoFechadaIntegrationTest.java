@@ -8,24 +8,50 @@ import com.bifrostconnect.api_geo.service.ProcessoService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLException;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf; // Import necessário
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(ProcessoController.class)
+@SpringBootTest
+@AutoConfigureMockMvc
+@Transactional
 class VersaoFechadaIntegrationTest {
+
+    private static final String SQLSTATE_RAISE = "P0001"; // Default PostgreSQL RAISE EXCEPTION state
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private ProcessoService processoService;
+
+    @MockBean
+    private ProcessoDashboardService processoDashboardService;
+
+    @MockBean
+    private ArquivoOriginalRepository arquivoOriginalRepository;
 
     private record Cenario(
             long gestorId,
@@ -223,16 +249,7 @@ class VersaoFechadaIntegrationTest {
                                 + "VALUES (?, ?, 'PUBLICACAO', 'APROVADO')",
                         c.processoId(),
                         inativo));
-    private MockMvc mockMvc;
-
-    @MockBean
-    private ProcessoService processoService;
-
-    @MockBean
-    private ProcessoDashboardService processoDashboardService;
-
-    @MockBean
-    private ArquivoOriginalRepository arquivoOriginalRepository;
+    } // <--- Chave de fecho do método que estava a faltar!
 
     @Test
     @DisplayName("Tarefa 9: Deve retornar 409 ao tentar atualizar um processo fechado")
@@ -247,7 +264,7 @@ class VersaoFechadaIntegrationTest {
                 .alocarEditorEAtualizarSituacao(eq(idProcessoFechado), anyLong());
 
         mockMvc.perform(put("/processos/{id}/editor", idProcessoFechado)
-                        .with(csrf()) // Adicionado para passar pela validação CSRF do Spring Security no teste
+                        .with(csrf()) 
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"editorId\": 1}"))
                 .andExpect(status().isConflict());
