@@ -45,6 +45,18 @@ public class GlobalExceptionHandler {
                 .body(error);
     }
 
+    // Tarefa 15: rede de segurança pra erro geoespacial que não foi pego no controller
+    @ExceptionHandler(FalhaGeoespacialException.class)
+    public ResponseEntity<Map<String, String>> handleFalhaGeoespacial(
+            FalhaGeoespacialException ex) {
+
+        Map<String, String> error = new HashMap<>();
+        error.put("erro", ex.getReason());
+        error.put("codigo", ex.getCodigoErro());
+        error.put("operacao", ex.getOperacao());
+
+        return ResponseEntity
+                .status(HttpStatus.UNPROCESSABLE_ENTITY)
     // US09 - Tarefa 8: ID inexistente sai sempre no mesmo formato { "erro": ... } com 404
     @ExceptionHandler(RecursoNaoEncontradoException.class)
     public ResponseEntity<Map<String, String>> handleRecursoNaoEncontrado(

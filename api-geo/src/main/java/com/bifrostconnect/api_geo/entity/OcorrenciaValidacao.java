@@ -19,11 +19,18 @@ public class OcorrenciaValidacao {
     @JoinColumn(name = "regra_id", nullable = false)
     private RegraValidacao regra;
 
+    // obrigatório no banco desde a V10: diz em qual passagem de etapa a ocorrência apareceu
+    @Column(name = "processo_etapa_id", nullable = false)
+    private Long processoEtapaId;
+
     @Column(nullable = false, length = 50)
     private String severidade;
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String mensagem;
+
+    @Column(columnDefinition = "TEXT")
+    private String detalhes;
 
     @Column(name = "data_criacao", nullable = false)
     private LocalDateTime dataCriacao = LocalDateTime.now();
@@ -39,11 +46,17 @@ public class OcorrenciaValidacao {
     public RegraValidacao getRegra() { return regra; }
     public void setRegra(RegraValidacao regra) { this.regra = regra; }
 
+    public Long getProcessoEtapaId() { return processoEtapaId; }
+    public void setProcessoEtapaId(Long processoEtapaId) { this.processoEtapaId = processoEtapaId; }
+
     public String getSeveridade() { return severidade; }
     public void setSeveridade(String severidade) { this.severidade = severidade; }
 
     public String getMensagem() { return mensagem; }
     public void setMensagem(String mensagem) { this.mensagem = mensagem; }
+
+    public String getDetalhes() { return detalhes; }
+    public void setDetalhes(String detalhes) { this.detalhes = detalhes; }
 
     public LocalDateTime getDataCriacao() { return dataCriacao; }
     public void setDataCriacao(LocalDateTime dataCriacao) { this.dataCriacao = dataCriacao; }

@@ -25,6 +25,204 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class VersaoFechadaIntegrationTest {
 
     @Autowired
+    private JdbcTemplate jdbc;
+
+    private record Cenario(
+            long gestorId,
+            long processoId,
+            long arquivoId,
+            long resultadoId) {
+    }
+
+    // ---------- helpers ----------
+
+    private Cenario criarCenario() {
+        String s = UUID.randomUUID().toString().substring(0, 8);
+
+        Long gestor = jdbc.queryForObject(
+                "INSERT INTO usuario (nome, email, senha_hash, perfil_id, ativo) "
+                        + "VALUES (?, ?, 'hash', "
+                        + "(SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR'), TRUE) "
+                        + "RETURNING id",
+                Long.class,
+                "Gestor " + s,
+                "gestor." + s + "@teste.local");
+
+        Long processo = jdbc.queryForObject(
+                "INSERT INTO processo "
+                        + "(operador_id, conjunto_id, orgao_id, ano_safra, epsg_origem) "
+                        + "VALUES (?, (SELECT min(id) FROM conjunto), "
+                        + "(SELECT min(id) FROM orgao), '2025/2026', '4674') "
+                        + "RETURNING id",
+                Long.class,
+                gestor);
+
+        String hash = (UUID.randomUUID().toString()
+                + UUID.randomUUID()).replace("-", "");
+
+        Long original = jdbc.queryForObject(
+                "INSERT INTO arquivo_original "
+                        + "(processo_id, usuario_upload_id, nome_original, "
+                        + "url_armazenamento, hash_sha256) "
+                        + "VALUES (?, ?, 'teste.zip', 'teste/teste.zip', ?) "
+                        + "RETURNING id",
+                Long.class,
+                processo,
+                gestor,
+                hash);
+
+        Long arquivo = jdbc.queryForObject(
+                "INSERT INTO arquivo_processado "
+                        + "(arquivo_original_id, processo_id, etapa_geracao_id, "
+                        + "nome_arquivo, url_armazenamento, versao) "
+                        + "VALUES (?, ?, "
+                        + "(SELECT id FROM etapa WHERE nome = 'TRATAMENTO'), "
+                        + "'tratado.gpkg', 'teste/tratado.gpkg', 1) "
+                        + "RETURNING id",
+                Long.class,
+                original,
+                processo);
+
+        Long resultado = jdbc.queryForObject(
+                "INSERT INTO resultados_calculos "
+                        + "(processo_id, arquivo_processado_id, codigo_imovel, "
+                        + "fonte_camada, codigo_alerta_app, hectares_sobrepostos) "
+                        + "VALUES (?, ?, 'CAR-TESTE', 'FUNAI_TERRA_INDIGENA', "
+                        + "'ALERTA-TESTE', 123.4567) "
+                        + "RETURNING id",
+                Long.class,
+                processo,
+                arquivo);
+
+        return new Cenario(gestor, processo, arquivo, resultado);
+    }
+
+    private void aprovarPublicacao(Cenario c) {
+        jdbc.update(
+                "INSERT INTO historico_aprovacoes_gestor "
+                        + "(processo_id, gestor_id, etapa_avaliada, decisao) "
+                        + "VALUES (?, ?, 'PUBLICACAO', 'APROVADO')",
+                c.processoId(),
+                c.gestorId());
+    }
+
+    private void fecharVersao(Cenario c) {
+        jdbc.update(
+                "UPDATE processo SET versao_oficial = '1.0', "
+                        + "versao_fechada = TRUE, data_publicacao = now(), "
+                        + "gestor_publicacao_id = ? WHERE id = ?",
+                c.gestorId(),
+                c.processoId());
+    }
+
+    private Cenario cenarioComVersaoFechada() {
+        Cenario c = criarCenario();
+        aprovarPublicacao(c);
+        fecharVersao(c);
+        return c;
+    }
+
+    /** Passa somente se o comando for barrado por uma trigger (RAISE EXCEPTION). */
+    private void esperaBloqueioPorTrigger(Runnable comando) {
+        try {
+            comando.run();
+        } catch (DataAccessException e) {
+            Throwable raiz = NestedExceptionUtils.getMostSpecificCause(e);
+
+            assertThat(raiz).isInstanceOf(SQLException.class);
+
+            assertThat(((SQLException) raiz).getSQLState())
+                    .as("o erro deveria vir de RAISE EXCEPTION, mas veio: %s",
+                            raiz.getMessage())
+                    .isEqualTo(SQLSTATE_RAISE);
+
+            return;
+        }
+
+        fail("Esperava bloqueio pela trigger, mas o comando foi executado");
+    }
+
+    @Test
+    void versaoAbertaAindaAceitaUpdate() {
+        Cenario c = criarCenario();
+
+        int linhas = jdbc.update(
+                "UPDATE resultados_calculos "
+                        + "SET hectares_sobrepostos = 200 WHERE id = ?",
+                c.resultadoId());
+
+        assertThat(linhas).isEqualTo(1);
+    }
+
+    @Test
+    void updateDeHectaresEmVersaoFechadaDeveSerBloqueado() {
+        Cenario c = cenarioComVersaoFechada();
+
+        esperaBloqueioPorTrigger(() ->
+                jdbc.update(
+                        "UPDATE resultados_calculos "
+                                + "SET hectares_sobrepostos = 0 WHERE id = ?",
+                        c.resultadoId()));
+    }
+
+    @Test
+    void deleteDeResultadoEmVersaoFechadaDeveSerBloqueado() {
+        Cenario c = cenarioComVersaoFechada();
+
+        esperaBloqueioPorTrigger(() ->
+                jdbc.update(
+                        "DELETE FROM resultados_calculos WHERE id = ?",
+                        c.resultadoId()));
+    }
+
+    @Test
+    void updateEmArquivoProcessadoDeVersaoFechadaDeveSerBloqueado() {
+        Cenario c = cenarioComVersaoFechada();
+
+        esperaBloqueioPorTrigger(() ->
+                jdbc.update(
+                        "UPDATE arquivo_processado "
+                                + "SET nome_arquivo = 'alterado' WHERE id = ?",
+                        c.arquivoId()));
+    }
+
+    @Test
+    void reabrirVersaoFechadaDeveSerBloqueado() {
+        Cenario c = cenarioComVersaoFechada();
+
+        esperaBloqueioPorTrigger(() ->
+                jdbc.update(
+                        "UPDATE processo SET versao_fechada = FALSE WHERE id = ?",
+                        c.processoId()));
+    }
+
+    @Test
+    void fecharVersaoSemAprovacaoNaPublicacaoDeveSerBloqueado() {
+        Cenario c = criarCenario();
+
+        esperaBloqueioPorTrigger(() -> fecharVersao(c));
+    }
+
+    @Test
+    void aprovadorInativoDeveSerRecusado() {
+        Cenario c = criarCenario();
+
+        Long inativo = jdbc.queryForObject(
+                "INSERT INTO usuario "
+                        + "(nome, email, senha_hash, perfil_id, ativo) "
+                        + "VALUES ('Inativo', ?, 'hash', "
+                        + "(SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR'), FALSE) "
+                        + "RETURNING id",
+                Long.class,
+                "inativo." + UUID.randomUUID() + "@teste.local");
+
+        esperaBloqueioPorTrigger(() ->
+                jdbc.update(
+                        "INSERT INTO historico_aprovacoes_gestor "
+                                + "(processo_id, gestor_id, etapa_avaliada, decisao) "
+                                + "VALUES (?, ?, 'PUBLICACAO', 'APROVADO')",
+                        c.processoId(),
+                        inativo));
     private MockMvc mockMvc;
 
     @MockBean

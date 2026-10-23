@@ -31,6 +31,14 @@ public class LogProcessamento {
     @Column(name = "mensagem", nullable = false)
     private String mensagem;
 
+    // Tarefa 15: as colunas já existiam na V8, só não estavam mapeadas.
+    // Erro geoespacial que manda a carga pra Quarentena grava o código (GEO_...) e o erro do PostGIS
+    @Column(name = "codigo_erro", length = 30)
+    private String codigoErro;
+
+    @Column(name = "detalhes")
+    private String detalhes;
+
     @Column(name = "data_hora", nullable = false)
     private LocalDateTime dataHora;
 }

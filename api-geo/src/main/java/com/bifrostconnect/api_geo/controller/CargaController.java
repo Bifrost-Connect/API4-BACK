@@ -2,6 +2,7 @@ package com.bifrostconnect.api_geo.controller;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -19,7 +20,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.bifrostconnect.api_geo.dto.CalculosCargaResponse;
 import com.bifrostconnect.api_geo.dto.CancelamentoRequest;
 import com.bifrostconnect.api_geo.dto.LinhagemResponseDTO;
 import com.bifrostconnect.api_geo.dto.MetadadosCargaRequest;
@@ -28,6 +31,7 @@ import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.exception.UnsupportedFileFormatException;
 import com.bifrostconnect.api_geo.service.ArquivoUploadService;
 import com.bifrostconnect.api_geo.service.AuditoriaLogService;
+import com.bifrostconnect.api_geo.service.CalculoAnaliticoService;
 import com.bifrostconnect.api_geo.service.CancelamentoCargaService;
 import com.bifrostconnect.api_geo.service.EncaminhamentoQuarentenaService;
 import com.bifrostconnect.api_geo.service.LinhagemService;
@@ -38,12 +42,14 @@ import com.bifrostconnect.api_geo.service.ExportacaoRejeicoesService;
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping({"/carga", "/api/carga"})
+@RequestMapping({"/carga", "/api/carga", "/cargas", "/api/cargas"})
 public class CargaController {
 
     private final MetadadosCargaService metadadosCargaService;
     private final ArquivoUploadService arquivoUploadService;
     private final AuditoriaLogService auditoriaLogService;
+    private final CalculoAnaliticoService calculoAnaliticoService;
+
     private final LinhagemService linhagemService;
     private final ExportacaoRejeicoesService exportacaoRejeicoesService; 
     private final EncaminhamentoQuarentenaService encaminhamentoQuarentenaService;    
@@ -54,6 +60,7 @@ public class CargaController {
             MetadadosCargaService metadadosCargaService,
             ArquivoUploadService arquivoUploadService,
             AuditoriaLogService auditoriaLogService,
+            CalculoAnaliticoService calculoAnaliticoService) {
             LinhagemService linhagemService,
             ExportacaoRejeicoesService exportacaoRejeicoesService,
             EncaminhamentoQuarentenaService encaminhamentoQuarentenaService,
@@ -63,6 +70,23 @@ public class CargaController {
         this.metadadosCargaService = metadadosCargaService;
         this.arquivoUploadService = arquivoUploadService;
         this.auditoriaLogService = auditoriaLogService;
+        this.calculoAnaliticoService = calculoAnaliticoService;
+    }
+
+
+    @GetMapping("/{id}/calculos")
+    public ResponseEntity<?> consultarCalculos(@PathVariable Long id) {
+        try {
+            CalculosCargaResponse calculos = calculoAnaliticoService.consultar(id);
+            return ResponseEntity.ok(calculos);
+
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(
+                    Map.of("erro", e.getReason() == null ? "Falha ao consultar os cálculos da carga." : e.getReason()));
+        }
+    }
+
+    //Recebe, valida e persiste os metadados.
         this.linhagemService = linhagemService;
         this.exportacaoRejeicoesService = exportacaoRejeicoesService; 
         this.encaminhamentoQuarentenaService = encaminhamentoQuarentenaService;
@@ -83,6 +107,7 @@ public class CargaController {
                 .body(processoSalvo);
     }
 
+    // Recebe o arquivo, realiza o upload e registra na auditoria.
     // Tarefa 4, 5 e 7: Recebe o arquivo, realiza o upload e registra na auditoria.
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
     @PostMapping("/upload")
@@ -118,7 +143,7 @@ public class CargaController {
                             processoId,
                             file);
 
-            // Tarefa 7: Registro do evento de auditoria após upload bem-sucedido.
+            // Registro do evento de auditoria após upload bem-sucedido.
             auditoriaLogService.registrarAuditoria(
                     usuarioId,
                     "UPLOAD_ARQUIVO",

@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.bifrostconnect.api_geo.dto.LogEspacialResponse;
 import com.bifrostconnect.api_geo.dto.ProcessLogDetailsResponse;
@@ -26,6 +27,7 @@ import com.bifrostconnect.api_geo.dto.ProcessoDashboardResponse;
 import com.bifrostconnect.api_geo.dto.ProcessoMetricasResponse;
 import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
 import com.bifrostconnect.api_geo.entity.Processo;
+import com.bifrostconnect.api_geo.exception.FalhaGeoespacialException;
 import com.bifrostconnect.api_geo.repository.ArquivoOriginalRepository;
 import com.bifrostconnect.api_geo.service.ProcessoDashboardService;
 import com.bifrostconnect.api_geo.service.ProcessoService;
@@ -163,17 +165,29 @@ public class ProcessoController {
 
             return ResponseEntity.ok(processoAtualizado);
 
-        } catch (IllegalArgumentException e) {
+        } catch (FalhaGeoespacialException e) {
+            // Tarefa 15: a carga já foi pra Quarentena; devolve 422 com o código pro front saber o motivo
+            return ResponseEntity.status(e.getStatusCode()).body(java.util.Map.of(
+                    "erro", e.getReason(),
+                    "codigo", e.getCodigoErro(),
+                    "operacao", e.getOperacao(),
+                    "quarentena", true));
+
+        }catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(
+                        java.util.Map.of("erro", e.getReason() == null ? "Falha ao processar a carga." : e.getReason()));
+
+        }catch (IllegalArgumentException e) {
 
             return ResponseEntity
-                    .badRequest()
-                    .body(e.getMessage());
+                        .badRequest()
+                         .body(e.getMessage());
 
         } catch (Exception e) {
 
             return ResponseEntity
-                    .internalServerError()
-                    .body(
+                        .internalServerError()
+                        .body(
                             "Erro ao processar o processo: "
                                     + e.getMessage()
                     );
