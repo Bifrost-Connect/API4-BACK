@@ -9,21 +9,29 @@ public record ResultadoValidacaoTopologica(
         int feicoesCarregadas,
         List<Problema> problemas) {
 
-    // cada tipo já sabe qual regra_validacao usar na hora de gravar a ocorrência
+    // cada tipo já sabe qual regra_validacao usar na hora de gravar a ocorrência.
+    // inaceitavel = manda a carga pra quarentena (Tarefa 12). Bate com as regras CRITICA;
+    // geometria inválida (ALTA) só gera aviso, o cálculo já pula esses polígonos
     public enum TipoProblema {
-        GEOMETRIA_INVALIDA("GEOMETRIA_INVALIDA"),
-        CODIGO_IMOVEL_DUPLICADO("CAR_DUPLICADO"),
-        POLIGONO_DUPLICADO("POLIGONO_DUPLICADO"),
-        POLIGONO_SOBREPOSTO("SOBREPOSICAO_PROPRIEDADE");
+        GEOMETRIA_INVALIDA("GEOMETRIA_INVALIDA", false),
+        CODIGO_IMOVEL_DUPLICADO("CAR_DUPLICADO", true),
+        POLIGONO_DUPLICADO("POLIGONO_DUPLICADO", true),
+        POLIGONO_SOBREPOSTO("SOBREPOSICAO_PROPRIEDADE", true);
 
         private final String regra;
+        private final boolean inaceitavel;
 
-        TipoProblema(String regra) {
+        TipoProblema(String regra, boolean inaceitavel) {
             this.regra = regra;
+            this.inaceitavel = inaceitavel;
         }
 
         public String getRegra() {
             return regra;
+        }
+
+        public boolean isInaceitavel() {
+            return inaceitavel;
         }
     }
 
@@ -43,6 +51,10 @@ public record ResultadoValidacaoTopologica(
 
     public boolean possuiProblemas() {
         return !problemas.isEmpty();
+    }
+
+    public List<Problema> problemasInaceitaveis() {
+        return problemas.stream().filter(p -> p.tipo().isInaceitavel()).toList();
     }
 
     public long contar(TipoProblema tipo) {

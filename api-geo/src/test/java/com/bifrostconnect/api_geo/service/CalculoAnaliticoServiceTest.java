@@ -26,16 +26,14 @@ class CalculoAnaliticoServiceTest {
     private static class BancoFalso extends JdbcTemplate {
         final List<String> sqls = new ArrayList<>();
         final List<Object[]> argumentos = new ArrayList<>();
-        List<BigDecimal> areas = List.of();
+        List<Map<String, Object>> areas = List.of();
         List<Map<String, Object>> cruzamentos = List.of();
 
         @Override
         public <T> List<T> query(String sql, RowMapper<T> rowMapper, Object... args) {
             sqls.add(sql);
             argumentos.add(args);
-            List<Map<String, Object>> linhas = sql.contains("UPDATE feicao_carga")
-                    ? areas.stream().map(a -> Map.<String, Object>of("hectares", a)).toList()
-                    : cruzamentos;
+            List<Map<String, Object>> linhas = sql.contains("UPDATE feicao_carga") ? areas : cruzamentos;
 
             List<T> resultado = new ArrayList<>();
             try {
@@ -53,6 +51,10 @@ class CalculoAnaliticoServiceTest {
             }
             return resultado;
         }
+    }
+
+    private static Map<String, Object> area(String imovel, String hectares) {
+        return Map.of("codigo_imovel", imovel, "hectares", new BigDecimal(hectares));
     }
 
     private static Map<String, Object> cruzamento(String imovel, String fonte, String alerta, String hectares) {
@@ -75,7 +77,7 @@ class CalculoAnaliticoServiceTest {
     @Test
     void somaAreaECruzamentosPorCategoria() {
         BancoFalso banco = new BancoFalso();
-        banco.areas = List.of(new BigDecimal("10.5000"), new BigDecimal("2.2500"));
+        banco.areas = List.of(area("CAR-1", "10.5000"), area("CAR-2", "2.2500"));
         banco.cruzamentos = List.of(
                 cruzamento("CAR-1", "INCAR_APP", "APP-9", "1.0000"),
                 cruzamento("CAR-1", "INPE_DESMATAMENTO_CERRADO", "D-1", "0.5000"),
@@ -93,6 +95,7 @@ class CalculoAnaliticoServiceTest {
         assertEquals(BigDecimal.ZERO, resultado.hectaresPorCategoria(Categoria.RESERVA_LEGAL));
         assertEquals(new BigDecimal("0.7500"), resultado.hectaresPorCategoria(Categoria.ALERTA));
         assertEquals(2, resultado.contar(Categoria.ALERTA));
+        assertFalse(resultado.possuiInconsistencias());
     }
 
     @Test
@@ -113,7 +116,7 @@ class CalculoAnaliticoServiceTest {
     @Test
     void semFonteConfiguradaSoCalculaArea() {
         BancoFalso banco = new BancoFalso();
-        banco.areas = List.of(new BigDecimal("3.0000"));
+        banco.areas = List.of(area("CAR-1", "3.0000"));
         CalculoAnaliticoService service = new CalculoAnaliticoService(banco, List.of(""), List.of(), List.of());
 
         ResultadoCalculoAnalitico resultado = service.calcular(processo(), copia());
@@ -122,5 +125,35 @@ class CalculoAnaliticoServiceTest {
         assertFalse(banco.sqls.get(0).contains("resultados_calculos"));
         assertTrue(resultado.cruzamentos().isEmpty());
         assertEquals(new BigDecimal("3.0000"), resultado.areaTotalHectares());
+    }
+
+    @Test
+    void poligonoComAreaZeradaViraInconsistencia() {
+        BancoFalso banco = new BancoFalso();
+        banco.areas = List.of(area("CAR-1", "5.0000"), area("CAR-2", "0.0000"));
+        CalculoAnaliticoService service = new CalculoAnaliticoService(banco, List.of(), List.of(), List.of());
+
+        ResultadoCalculoAnalitico resultado = service.calcular(processo(), copia());
+
+        assertTrue(resultado.possuiInconsistencias());
+        assertEquals(1, resultado.inconsistencias().size());
+        assertTrue(resultado.inconsistencias().get(0).contains("CAR-2"));
+    }
+
+    @Test
+    void cruzamentoMaiorQueOImovelViraInconsistencia() {
+        BancoFalso banco = new BancoFalso();
+        banco.areas = List.of(area("CAR-1", "2.0000"));
+        banco.cruzamentos = List.of(
+                cruzamento("CAR-1", "INCAR_APP", "APP-1", "2.0001"),
+                cruzamento("CAR-1", "IBAMA_EMBARGO", "E-1", "2.5000"));
+        CalculoAnaliticoService service = new CalculoAnaliticoService(banco,
+                List.of("INCAR_APP"), List.of(), List.of("IBAMA_EMBARGO"));
+
+        ResultadoCalculoAnalitico resultado = service.calcular(processo(), copia());
+
+        // 2.0001 tá dentro da tolerância de arredondamento, só o 2.5 é erro de verdade
+        assertEquals(1, resultado.inconsistencias().size());
+        assertTrue(resultado.inconsistencias().get(0).contains("E-1"));
     }
 }

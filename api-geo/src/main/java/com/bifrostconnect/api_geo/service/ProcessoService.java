@@ -33,6 +33,7 @@ public class ProcessoService {
     private final ArquivoProcessadoService arquivoProcessadoService;
     private final ValidacaoTopologicaService validacaoTopologicaService;
     private final CalculoAnaliticoService calculoAnaliticoService;
+    private final NotificacaoService notificacaoService;
 
     public ProcessoService(
             ProcessoRepository processoRepository,
@@ -44,7 +45,8 @@ public class ProcessoService {
             PadronizacaoEpsgService padronizacaoEpsgService,
             ArquivoProcessadoService arquivoProcessadoService,
             ValidacaoTopologicaService validacaoTopologicaService,
-            CalculoAnaliticoService calculoAnaliticoService
+            CalculoAnaliticoService calculoAnaliticoService,
+            NotificacaoService notificacaoService
         ) {
 
         this.processoRepository = processoRepository;
@@ -57,6 +59,7 @@ public class ProcessoService {
         this.arquivoProcessadoService = arquivoProcessadoService;
         this.validacaoTopologicaService = validacaoTopologicaService;
         this.calculoAnaliticoService = calculoAnaliticoService;
+        this.notificacaoService = notificacaoService;
     }
 
     public Processo buscarPorId(Long id) {
@@ -320,6 +323,18 @@ public class ProcessoService {
                     + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_DUPLICADO) + " duplicados, "
                     + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_SOBREPOSTO) + " sobreposições.");
 
+    // Tarefa 12: sobreposição/duplicação inaceitável não deixa nem chegar no cálculo
+    List<ResultadoValidacaoTopologica.Problema> inaceitaveis = topologia.problemasInaceitaveis();
+    if (!inaceitaveis.isEmpty()) {
+        return enviarParaQuarentena(
+                processo,
+                usuarioId,
+                "QUARENTENA_TOPOLOGIA",
+                "Validação topológica encontrou " + inaceitaveis.size()
+                        + " sobreposição(ões)/duplicação(ões) inaceitável(is).",
+                inaceitaveis.stream().map(ResultadoValidacaoTopologica.Problema::mensagem).toList());
+    }
+
     // 3ª parte do Tratamento: área de cada polígono válido e cruzamento com APP, RL e Alertas
     processoEstadoService.atualizarEstado(
             processo,
@@ -333,26 +348,24 @@ public class ProcessoService {
         calculo = calculoAnaliticoService.calcular(processo, copiaTrabalho);
 
     } catch (Exception e) {
-        String mensagem = "Falha no cálculo analítico dos polígonos: "
-                + e.getMessage();
-
-        processoEstadoService.atualizarEstado(
+        // Tarefa 12: erro do PostGIS no meio da conta (TopologyException etc.) não é falha
+        // técnica do sistema, é a geometria da carga que não fecha -> vai pro Gestor decidir
+        return enviarParaQuarentena(
                 processo,
-                "TRATAMENTO",
-                "FALHOU",
-                mensagem);
+                usuarioId,
+                "QUARENTENA_CALCULO",
+                "Erro no cálculo analítico dos polígonos.",
+                List.of(String.valueOf(e.getMessage())));
+    }
 
-        auditoriaLogService.registrarLog(
+    if (calculo.possuiInconsistencias()) {
+        return enviarParaQuarentena(
                 processo,
-                "ERROR",
-                mensagem);
-
-        salvarGarantindoCampos(processo);
-
-        throw new ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                mensagem,
-                e);
+                usuarioId,
+                "QUARENTENA_CALCULO",
+                "Cálculo analítico encontrou " + calculo.inconsistencias().size()
+                        + " inconsistência(s) matemática(s)/geométrica(s).",
+                calculo.inconsistencias());
     }
 
     auditoriaLogService.registrarLog(
@@ -366,8 +379,6 @@ public class ProcessoService {
                     + calculo.contar(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL) + " cruzamentos), Alertas "
                     + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.ALERTA).toPlainString() + " ha ("
                     + calculo.contar(ResultadoCalculoAnalitico.Categoria.ALERTA) + " cruzamentos).");
-
-    // mandar pra quarentena quando tiver problema fica pra Tarefa 12
 
     processoEstadoService.atualizarEstado(
             processo,
@@ -417,6 +428,47 @@ public class ProcessoService {
     return salvarGarantindoCampos(processo);
 }
 
+
+    // Tarefa 12: para o Tratamento na hora e deixa a carga parada em
+    // TRATAMENTO / EM_VALIDACAO (quarentena) esperando a decisão do Gestor.
+    // A V14 trava a cópia de trabalho enquanto ela estiver nesse estado
+    private Processo enviarParaQuarentena(
+            Processo processo,
+            Long usuarioId,
+            String acaoAuditoria,
+            String motivo,
+            List<String> detalhes) {
+
+        String mensagem = motivo
+                + " Tratamento interrompido e carga enviada para a Quarentena, aguardando decisão do Gestor.";
+
+        processoEstadoService.atualizarEstado(
+                processo,
+                "TRATAMENTO",
+                "EM_VALIDACAO",
+                mensagem);
+
+        // detalhe completo já fica em ocorrencia_validacao (topologia); no log vai só uma amostra
+        int limite = 10;
+        String amostra = String.join(" ", detalhes.subList(0, Math.min(limite, detalhes.size())))
+                + (detalhes.size() > limite ? " (+" + (detalhes.size() - limite) + " outros)" : "");
+
+        auditoriaLogService.registrarLog(
+                processo,
+                "WARNING",
+                mensagem + " Detalhes: " + amostra);
+
+        auditoriaLogService.registrarAuditoria(
+                usuarioId,
+                acaoAuditoria,
+                "Processo ID: " + processo.getId() + "; " + motivo);
+
+        notificacaoService.notificarAuditores(
+                processo,
+                "Carga do processo " + processo.getId() + " está em Quarentena na etapa de Tratamento: " + motivo);
+
+        return salvarGarantindoCampos(processo);
+    }
 
     @Transactional
     public void fecharIndicador(Long id, Long gestorId) {

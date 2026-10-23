@@ -6,7 +6,8 @@ import java.util.List;
 public record ResultadoCalculoAnalitico(
         int poligonosCalculados,
         BigDecimal areaTotalHectares,
-        List<Cruzamento> cruzamentos) {
+        List<Cruzamento> cruzamentos,
+        List<String> inconsistencias) {
 
     // as fontes de cada categoria vêm do application.properties (calculo-analitico.fontes.*)
     public enum Categoria {
@@ -29,6 +30,11 @@ public record ResultadoCalculoAnalitico(
                 .filter(c -> c.categoria() == categoria)
                 .map(Cruzamento::hectaresSobrepostos)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    // conta que não fecha (área zerada, cruzamento maior que o imóvel...) -> quarentena (Tarefa 12)
+    public boolean possuiInconsistencias() {
+        return !inconsistencias.isEmpty();
     }
 
     public long contar(Categoria categoria) {

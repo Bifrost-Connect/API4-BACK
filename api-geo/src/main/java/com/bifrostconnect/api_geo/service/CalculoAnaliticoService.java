@@ -3,6 +3,7 @@ package com.bifrostconnect.api_geo.service;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +11,8 @@ import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico;
 import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico.Categoria;
@@ -32,7 +35,7 @@ public class CalculoAnaliticoService {
                      WHERE arquivo_processado_id = ?
                        AND ST_IsValid(geom)) a
              WHERE fc.id = a.id
-            RETURNING a.hectares
+            RETURNING fc.codigo_imovel, a.hectares
             """;
 
     private static final String SQL_CRUZAMENTOS = """
@@ -82,13 +85,52 @@ public class CalculoAnaliticoService {
         }
     }
 
+    private record Area(String codigoImovel, BigDecimal hectares) {}
+
+    // NESTED = savepoint: se o PostGIS estourar no meio, desfaz só o que o cálculo gravou
+    // e a transação do Tratamento continua de pé pra mandar a carga pra quarentena (Tarefa 12)
+    @Transactional(propagation = Propagation.NESTED)
     public ResultadoCalculoAnalitico calcular(Processo processo, ArquivoProcessado copiaTrabalho) {
         Long arquivoId = copiaTrabalho.getId();
 
-        List<BigDecimal> areas = jdbcTemplate.query(SQL_AREA, (rs, i) -> rs.getBigDecimal("hectares"), arquivoId);
-        BigDecimal areaTotal = areas.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<Area> areas = jdbcTemplate.query(SQL_AREA,
+                (rs, i) -> new Area(rs.getString("codigo_imovel"), rs.getBigDecimal("hectares")), arquivoId);
+        BigDecimal areaTotal = areas.stream()
+                .map(Area::hectares)
+                .filter(h -> h != null)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        return new ResultadoCalculoAnalitico(areas.size(), areaTotal, cruzar(processo.getId(), arquivoId));
+        List<Cruzamento> cruzamentos = cruzar(processo.getId(), arquivoId);
+
+        return new ResultadoCalculoAnalitico(areas.size(), areaTotal, cruzamentos, conferir(areas, cruzamentos));
+    }
+
+    // confere se as contas fecham: polígono válido tem que ter área > 0 e a parte dele que cai
+    // numa camada não pode ser maior que ele mesmo (a tolerância é só pro arredondamento)
+    private List<String> conferir(List<Area> areas, List<Cruzamento> cruzamentos) {
+        List<String> inconsistencias = new ArrayList<>();
+        Map<String, BigDecimal> areaPorImovel = new HashMap<>();
+
+        for (Area area : areas) {
+            if (area.hectares() == null || area.hectares().signum() <= 0) {
+                inconsistencias.add("Polígono " + area.codigoImovel() + " ficou com área "
+                        + (area.hectares() == null ? "nula" : area.hectares().toPlainString() + " ha") + ".");
+            } else {
+                areaPorImovel.merge(area.codigoImovel(), area.hectares(), BigDecimal::add);
+            }
+        }
+
+        for (Cruzamento cruzamento : cruzamentos) {
+            BigDecimal areaImovel = areaPorImovel.get(cruzamento.codigoImovel());
+            if (areaImovel != null && cruzamento.hectaresSobrepostos().compareTo(
+                    areaImovel.add(ValidacaoTopologicaService.TOLERANCIA_SOBREPOSICAO_HA)) > 0) {
+                inconsistencias.add("Cruzamento do polígono " + cruzamento.codigoImovel() + " com "
+                        + cruzamento.fonteCamada() + " (" + cruzamento.codigoAlerta() + ") deu "
+                        + cruzamento.hectaresSobrepostos().toPlainString() + " ha, maior que a área do imóvel ("
+                        + areaImovel.toPlainString() + " ha).");
+            }
+        }
+        return inconsistencias;
     }
 
     private List<Cruzamento> cruzar(Long processoId, Long arquivoId) {

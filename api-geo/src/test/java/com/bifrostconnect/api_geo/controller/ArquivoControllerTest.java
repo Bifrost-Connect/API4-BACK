@@ -311,4 +311,67 @@ class ArquivoControllerTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("Tarefa 12: polígonos sobrepostos => Tratamento interrompido e carga na Quarentena (TRATAMENTO / EM_VALIDACAO)")
+    void deveMandarParaQuarentenaQuandoPoligonosSeSobrepoem() throws Exception {
+        Long etapaTratamento = 2L;
+        Long situacaoEmValidacao = 2L;
+
+        // CAR-B começa no meio do CAR-A, então metade de um cai dentro do outro
+        Path arquivo = Files.createTempFile("sobreposicao", ".geojson");
+        Path copia = null;
+
+        try {
+            Files.writeString(arquivo, """
+                {"type":"FeatureCollection","features":[
+                 {"type":"Feature","properties":{"cod_imovel":"CAR-A"},
+                  "geometry":{"type":"Polygon","coordinates":[[[-46.634,-23.551],[-46.634,-23.552],
+                  [-46.632,-23.552],[-46.632,-23.551],[-46.634,-23.551]]]}},
+                 {"type":"Feature","properties":{"cod_imovel":"CAR-B"},
+                  "geometry":{"type":"Polygon","coordinates":[[[-46.633,-23.551],[-46.633,-23.552],
+                  [-46.631,-23.552],[-46.631,-23.551],[-46.633,-23.551]]]}}]}
+                """);
+
+            String hashOriginal = (java.util.UUID.randomUUID().toString() + java.util.UUID.randomUUID())
+                    .replace("-", "").substring(0, 64);
+            jdbcTemplate.update("""
+                INSERT INTO arquivo_original
+                    (processo_id, usuario_upload_id, nome_original, extensao, tipo_mime,
+                     tamanho_bytes, url_armazenamento, hash_sha256)
+                VALUES (?, 1, 'sobreposicao.geojson', 'geojson', 'application/json', ?, ?, ?)
+                """, processoId, Files.size(arquivo), arquivo.toString(), hashOriginal);
+
+            Processo processo = processoRepository.findById(processoId).orElseThrow();
+            Processo resultado = processoService.processarArquivo(
+                    processo, "sobreposicao.geojson", arquivo, 1L);
+
+            assertEquals(etapaTratamento, resultado.getEtapaAtualId());
+            assertEquals(situacaoEmValidacao, resultado.getSituacaoAtualId());
+            assertEquals(situacaoEmValidacao, jdbcTemplate.queryForObject(
+                    "SELECT situacao_atual_id FROM processo WHERE id = ?", Long.class, processoId));
+
+            // parou antes do cálculo: nada de área nem cruzamento gravado
+            assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM resultados_calculos WHERE processo_id = ?", Integer.class, processoId));
+            assertEquals(0, jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM feicao_carga fc
+                      JOIN arquivo_processado ap ON ap.id = fc.arquivo_processado_id
+                     WHERE ap.processo_id = ? AND fc.atributos->>'area_hectares' IS NOT NULL
+                    """, Integer.class, processoId));
+
+            assertTrue(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM log_processamento WHERE processo_id = ? AND nivel = 'WARNING' AND mensagem LIKE '%Quarentena%'",
+                    Integer.class, processoId) > 0);
+
+            copia = Path.of(jdbcTemplate.queryForObject(
+                    "SELECT url_armazenamento FROM arquivo_processado WHERE processo_id = ?", String.class, processoId));
+
+        } finally {
+            Files.deleteIfExists(arquivo);
+            if (copia != null) {
+                Files.deleteIfExists(copia);
+            }
+        }
+    }
 }
