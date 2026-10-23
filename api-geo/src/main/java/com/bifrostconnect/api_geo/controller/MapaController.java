@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping({"/mapa", "/api/mapa"})
+@RequestMapping("/mapa")
 public class MapaController {
 
     private final MapaService mapaService;
@@ -122,3 +122,4 @@ public class MapaController {
         return ResponseEntity.ok(geoJson);
     }
 }
+
