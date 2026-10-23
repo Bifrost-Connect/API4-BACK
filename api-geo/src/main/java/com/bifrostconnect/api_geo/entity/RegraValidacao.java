@@ -19,6 +19,10 @@ public class RegraValidacao {
     @Column(nullable = false)
     private Boolean ativo = true;
 
+    // BAIXA, MEDIA, ALTA ou CRITICA; a ocorrência copia daqui pra não cair no CHECK do banco
+    @Column(nullable = false, length = 20)
+    private String severidade;
+
     public RegraValidacao() {}
 
     public Long getId() { return id; }
@@ -29,6 +33,9 @@ public class RegraValidacao {
 
     public String getDescricao() { return descricao; }
     public void setDescricao(String descricao) { this.descricao = descricao; }
+
+    public String getSeveridade() { return severidade; }
+    public void setSeveridade(String severidade) { this.severidade = severidade; }
 
     public Boolean getAtivo() { return ativo; }
     public void setAtivo(Boolean ativo) { this.ativo = ativo; }

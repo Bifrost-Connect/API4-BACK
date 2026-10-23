@@ -44,6 +44,9 @@ public class Processo {
     @Column(name = "epsg_origem")
     private String epsgOrigem;
 
+    @Column(name = "epsg_detectado")
+    private String epsgDetectado;
+
     @Column(name = "epsg_destino")
     private String epsgDestino;
 
