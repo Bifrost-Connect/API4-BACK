@@ -2,6 +2,7 @@ package com.bifrostconnect.api_geo.controller;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -17,36 +18,55 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.bifrostconnect.api_geo.dto.CalculosCargaResponse;
 import com.bifrostconnect.api_geo.dto.MetadadosCargaRequest;
 import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.exception.UnsupportedFileFormatException;
 import com.bifrostconnect.api_geo.service.ArquivoUploadService;
 import com.bifrostconnect.api_geo.service.AuditoriaLogService;
+import com.bifrostconnect.api_geo.service.CalculoAnaliticoService;
 import com.bifrostconnect.api_geo.service.MetadadosCargaService;
 
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping({"/carga", "/api/carga"})
+@RequestMapping({"/carga", "/api/carga", "/cargas", "/api/cargas"})
 public class CargaController {
 
     private final MetadadosCargaService metadadosCargaService;
     private final ArquivoUploadService arquivoUploadService;
     private final AuditoriaLogService auditoriaLogService;
+    private final CalculoAnaliticoService calculoAnaliticoService;
 
     public CargaController(
             MetadadosCargaService metadadosCargaService,
             ArquivoUploadService arquivoUploadService,
-            AuditoriaLogService auditoriaLogService) {
+            AuditoriaLogService auditoriaLogService,
+            CalculoAnaliticoService calculoAnaliticoService) {
 
         this.metadadosCargaService = metadadosCargaService;
         this.arquivoUploadService = arquivoUploadService;
         this.auditoriaLogService = auditoriaLogService;
+        this.calculoAnaliticoService = calculoAnaliticoService;
     }
 
-    // Tarefa 3 e 5: Recebe, valida e persiste os metadados.
+    
+    @GetMapping("/{id}/calculos")
+    public ResponseEntity<?> consultarCalculos(@PathVariable Long id) {
+        try {
+            CalculosCargaResponse calculos = calculoAnaliticoService.consultar(id);
+            return ResponseEntity.ok(calculos);
+
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(
+                    Map.of("erro", e.getReason() == null ? "Falha ao consultar os cálculos da carga." : e.getReason()));
+        }
+    }
+
+    //Recebe, valida e persiste os metadados.
     @PostMapping("/metadados")
     public ResponseEntity<Processo> cadastrarMetadados(
             @Valid @RequestBody MetadadosCargaRequest request) {
@@ -59,7 +79,7 @@ public class CargaController {
                 .body(processoSalvo);
     }
 
-    // Tarefa 4, 5 e 7: Recebe o arquivo, realiza o upload e registra na auditoria.
+    // Recebe o arquivo, realiza o upload e registra na auditoria.
     @PostMapping("/upload")
     public ResponseEntity<?> uploadArquivo(
             @RequestParam("processoId") Long processoId,
@@ -93,7 +113,7 @@ public class CargaController {
                             processoId,
                             file);
 
-            // Tarefa 7: Registro do evento de auditoria após upload bem-sucedido.
+            // Registro do evento de auditoria após upload bem-sucedido.
             auditoriaLogService.registrarAuditoria(
                     usuarioId,
                     "UPLOAD_ARQUIVO",
@@ -133,11 +153,6 @@ public class CargaController {
         }
     }
 
-    /*
-     * Download do arquivo original.
-     *
-     * GET /carga/download/{processoId}
-     */
     @GetMapping("/download/{processoId}")
     public ResponseEntity<Resource> baixarArquivoOriginal(
             @PathVariable Long processoId) {

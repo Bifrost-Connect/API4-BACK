@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -373,5 +374,80 @@ class ArquivoControllerTest {
                 Files.deleteIfExists(copia);
             }
         }
+    }
+
+    @Test
+    @DisplayName("Tarefa 13: GET /api/cargas/{id}/calculos devolve área total, área por polígono, interseções e alertas do Tratamento")
+    void deveConsultarCalculosDaCarga() throws Exception {
+        // dois imóveis lado a lado (sem sobreposição) e um embargo pegando só um pedaço do CAR-A
+        Path arquivo = Files.createTempFile("calculos_carga", ".geojson");
+        Path copia = null;
+
+        jdbcTemplate.update("""
+            INSERT INTO camada_referencia (fonte, nome_camada, identificador_origem, geom)
+            VALUES ('IBAMA_EMBARGO', 'Embargo teste T13', 'EMB-T13',
+                    ST_GeomFromText('POLYGON((-46.6335 -23.551, -46.6335 -23.552, -46.6325 -23.552,
+                                              -46.6325 -23.551, -46.6335 -23.551))', 4674))
+            """);
+
+        try {
+            Files.writeString(arquivo, """
+                {"type":"FeatureCollection","features":[
+                 {"type":"Feature","properties":{"cod_imovel":"CAR-A"},
+                  "geometry":{"type":"Polygon","coordinates":[[[-46.634,-23.551],[-46.634,-23.552],
+                  [-46.633,-23.552],[-46.633,-23.551],[-46.634,-23.551]]]}},
+                 {"type":"Feature","properties":{"cod_imovel":"CAR-B"},
+                  "geometry":{"type":"Polygon","coordinates":[[[-46.632,-23.551],[-46.632,-23.552],
+                  [-46.631,-23.552],[-46.631,-23.551],[-46.632,-23.551]]]}}]}
+                """);
+
+            String hashOriginal = (java.util.UUID.randomUUID().toString() + java.util.UUID.randomUUID())
+                    .replace("-", "").substring(0, 64);
+            jdbcTemplate.update("""
+                INSERT INTO arquivo_original
+                    (processo_id, usuario_upload_id, nome_original, extensao, tipo_mime,
+                     tamanho_bytes, url_armazenamento, hash_sha256)
+                VALUES (?, 1, 'calculos_carga.geojson', 'geojson', 'application/json', ?, ?, ?)
+                """, processoId, Files.size(arquivo), arquivo.toString(), hashOriginal);
+
+            Processo processo = processoRepository.findById(processoId).orElseThrow();
+            processoService.processarArquivo(processo, "calculos_carga.geojson", arquivo, 1L);
+
+            copia = Path.of(jdbcTemplate.queryForObject(
+                    "SELECT url_armazenamento FROM arquivo_processado WHERE processo_id = ?", String.class, processoId));
+            Long arquivoProcessadoId = jdbcTemplate.queryForObject(
+                    "SELECT id FROM arquivo_processado WHERE processo_id = ?", Long.class, processoId);
+
+            mockMvc.perform(get("/api/cargas/{id}/calculos", processoId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.processoId").value(processoId))
+                    .andExpect(jsonPath("$.arquivoProcessadoId").value(arquivoProcessadoId))
+                    .andExpect(jsonPath("$.poligonosCalculados").value(2))
+                    .andExpect(jsonPath("$.areaTotalHectares").isNumber())
+                    .andExpect(jsonPath("$.poligonos[0].codigoImovel").value("CAR-A"))
+                    .andExpect(jsonPath("$.poligonos[1].codigoImovel").value("CAR-B"))
+                    .andExpect(jsonPath("$.intersecoes.length()").value(1))
+                    .andExpect(jsonPath("$.alertasAmbientais[0].codigoImovel").value("CAR-A"))
+                    .andExpect(jsonPath("$.alertasAmbientais[0].fonteCamada").value("IBAMA_EMBARGO"))
+                    .andExpect(jsonPath("$.alertasAmbientais[0].codigoAlerta").value("EMB-T13"))
+                    .andExpect(jsonPath("$.alertasAmbientais[0].categoria").value("ALERTA"))
+                    .andExpect(jsonPath("$.totaisPorCategoria.ALERTA.quantidade").value(1))
+                    .andExpect(jsonPath("$.totaisPorCategoria.APP.quantidade").value(0));
+
+        } finally {
+            jdbcTemplate.update("DELETE FROM camada_referencia WHERE identificador_origem = 'EMB-T13'");
+            Files.deleteIfExists(arquivo);
+            if (copia != null) {
+                Files.deleteIfExists(copia);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Tarefa 13: carga inexistente => 404 com mensagem de erro")
+    void deveDar404AoConsultarCalculosDeCargaInexistente() throws Exception {
+        mockMvc.perform(get("/api/cargas/{id}/calculos", 999999L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.erro").exists());
     }
 }

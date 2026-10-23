@@ -1,19 +1,27 @@
 package com.bifrostconnect.api_geo.service;
 
 import java.math.BigDecimal;
+import java.sql.Savepoint;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.bifrostconnect.api_geo.dto.CalculosCargaResponse;
+import com.bifrostconnect.api_geo.dto.CalculosCargaResponse.AreaPoligono;
+import com.bifrostconnect.api_geo.dto.CalculosCargaResponse.Intersecao;
+import com.bifrostconnect.api_geo.dto.CalculosCargaResponse.TotalCategoria;
 import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico;
 import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico.Categoria;
 import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico.Cruzamento;
@@ -25,17 +33,16 @@ import com.bifrostconnect.api_geo.entity.Processo;
 @Service
 public class CalculoAnaliticoService {
 
-    // a área vai pro JSONB da própria feição; a feicao_carga não tem coluna pra isso.
-    // A geography é pra área sair em m² de verdade (a geometria está em graus, SIRGAS 2000)
+    // área de cada polígono válido. A geography é pra área sair em m² de verdade (a geometria
+    // está em graus, SIRGAS 2000). Não grava de volta na feicao_carga de propósito: UPDATE lá
+    // dispara o trigger da V22 (FOR SHARE no processo) e trava o atualizarEstado, que roda em
+    // REQUIRES_NEW. Como a conta é determinística, a consulta da Tarefa 13 refaz com o mesmo SQL
     private static final String SQL_AREA = """
-            UPDATE feicao_carga fc
-               SET atributos = COALESCE(fc.atributos, '{}'::jsonb) || jsonb_build_object('area_hectares', a.hectares)
-              FROM (SELECT id, ROUND((ST_Area(geom::geography) / 10000)::numeric, 4) AS hectares
-                      FROM feicao_carga
-                     WHERE arquivo_processado_id = ?
-                       AND ST_IsValid(geom)) a
-             WHERE fc.id = a.id
-            RETURNING fc.codigo_imovel, a.hectares
+            SELECT codigo_imovel, ROUND((ST_Area(geom::geography) / 10000)::numeric, 4) AS hectares
+              FROM feicao_carga
+             WHERE arquivo_processado_id = ?
+               AND ST_IsValid(geom)
+             ORDER BY codigo_imovel
             """;
 
     private static final String SQL_CRUZAMENTOS = """
@@ -58,6 +65,34 @@ public class CalculoAnaliticoService {
                      GROUP BY fc.codigo_imovel, cr.fonte, COALESCE(cr.identificador_origem, 'ID_' || cr.id)) s
              WHERE s.hectares >= ?
             RETURNING codigo_imovel, fonte_camada, codigo_alerta_app, hectares_sobrepostos
+            """;
+
+    // ---- Tarefa 13: leitura do que o Tratamento já gravou ----
+
+    private static final String SQL_PROCESSO = """
+            SELECT p.id, e.nome AS etapa, s.nome AS situacao
+              FROM processo p
+              LEFT JOIN etapa e ON e.id = p.etapa_atual_id
+              LEFT JOIN situacao s ON s.id = p.situacao_atual_id
+             WHERE p.id = ?
+            """;
+
+    // a cópia de trabalho do Tratamento é a que tem feições extraídas; pega a mais nova
+    // (a carga pode ter sido reenviada e ganhado outra cópia)
+    private static final String SQL_ULTIMA_COPIA = """
+            SELECT ap.id
+              FROM arquivo_processado ap
+             WHERE ap.processo_id = ?
+               AND EXISTS (SELECT 1 FROM feicao_carga fc WHERE fc.arquivo_processado_id = ap.id)
+             ORDER BY ap.id DESC
+             LIMIT 1
+            """;
+
+    private static final String SQL_CRUZAMENTOS_GRAVADOS = """
+            SELECT codigo_imovel, fonte_camada, codigo_alerta_app, hectares_sobrepostos
+              FROM resultados_calculos
+             WHERE arquivo_processado_id = ?
+             ORDER BY codigo_imovel, fonte_camada, codigo_alerta_app
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -87,10 +122,26 @@ public class CalculoAnaliticoService {
 
     private record Area(String codigoImovel, BigDecimal hectares) {}
 
-    // NESTED = savepoint: se o PostGIS estourar no meio, desfaz só o que o cálculo gravou
-    // e a transação do Tratamento continua de pé pra mandar a carga pra quarentena (Tarefa 12)
-    @Transactional(propagation = Propagation.NESTED)
+    // savepoint: se o PostGIS estourar no meio, desfaz só o que o cálculo gravou
+    // e a transação do Tratamento continua de pé pra mandar a carga pra quarentena (Tarefa 12).
+    // Não dá pra usar Propagation.NESTED: com JPA/Hibernate o Spring recusa
+    // ("JpaDialect does not support savepoints"), então o savepoint é feito na mão
+    // na mesma conexão da transação do Tratamento
     public ResultadoCalculoAnalitico calcular(Processo processo, ArquivoProcessado copiaTrabalho) {
+        return jdbcTemplate.execute((ConnectionCallback<ResultadoCalculoAnalitico>) conexao -> {
+            Savepoint savepoint = conexao.setSavepoint();
+            try {
+                ResultadoCalculoAnalitico resultado = calcularNoSavepoint(processo, copiaTrabalho);
+                conexao.releaseSavepoint(savepoint);
+                return resultado;
+            } catch (RuntimeException e) {
+                conexao.rollback(savepoint);
+                throw e;
+            }
+        });
+    }
+
+    private ResultadoCalculoAnalitico calcularNoSavepoint(Processo processo, ArquivoProcessado copiaTrabalho) {
         Long arquivoId = copiaTrabalho.getId();
 
         List<Area> areas = jdbcTemplate.query(SQL_AREA,
@@ -154,5 +205,63 @@ public class CalculoAnaliticoService {
                 rs.getString("fonte_camada"),
                 rs.getString("codigo_alerta_app"),
                 rs.getBigDecimal("hectares_sobrepostos")), argumentos.toArray());
+    }
+
+    private record SituacaoProcesso(String etapa, String situacao) {}
+
+    // Tarefa 13: monta as métricas do Tratamento pra tela. Carga que ainda não chegou no
+    // cálculo (ou parou na quarentena da topologia) volta com as listas vazias, não 404
+    @Transactional(readOnly = true)
+    public CalculosCargaResponse consultar(Long processoId) {
+        List<SituacaoProcesso> processo = jdbcTemplate.query(SQL_PROCESSO,
+                (rs, i) -> new SituacaoProcesso(rs.getString("etapa"), rs.getString("situacao")), processoId);
+        if (processo.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Carga não encontrada para o ID: " + processoId);
+        }
+
+        List<Long> copias = jdbcTemplate.query(SQL_ULTIMA_COPIA, (rs, i) -> rs.getLong("id"), processoId);
+        Long arquivoId = copias.isEmpty() ? null : copias.get(0);
+
+        List<AreaPoligono> poligonos = arquivoId == null ? List.of()
+                : jdbcTemplate.query(SQL_AREA, (rs, i) -> new AreaPoligono(
+                        rs.getString("codigo_imovel"), rs.getBigDecimal("hectares")), arquivoId);
+
+        List<Cruzamento> cruzamentos = arquivoId == null ? List.of()
+                : jdbcTemplate.query(SQL_CRUZAMENTOS_GRAVADOS, (rs, i) -> new Cruzamento(
+                        rs.getString("codigo_imovel"),
+                        categoriaPorFonte.get(rs.getString("fonte_camada")),
+                        rs.getString("fonte_camada"),
+                        rs.getString("codigo_alerta_app"),
+                        rs.getBigDecimal("hectares_sobrepostos")), arquivoId);
+
+        BigDecimal areaTotal = poligonos.stream()
+                .map(AreaPoligono::areaHectares)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // reaproveita as somas do resultado do cálculo; toda categoria aparece, mesmo zerada
+        ResultadoCalculoAnalitico resultado =
+                new ResultadoCalculoAnalitico(poligonos.size(), areaTotal, cruzamentos, List.of());
+        Map<Categoria, TotalCategoria> totais = new EnumMap<>(Categoria.class);
+        for (Categoria categoria : Categoria.values()) {
+            totais.put(categoria, new TotalCategoria(
+                    resultado.contar(categoria), resultado.hectaresPorCategoria(categoria)));
+        }
+
+        List<Intersecao> intersecoes = cruzamentos.stream()
+                .map(c -> new Intersecao(c.codigoImovel(), c.categoria(), c.fonteCamada(),
+                        c.codigoAlerta(), c.hectaresSobrepostos()))
+                .toList();
+
+        return new CalculosCargaResponse(
+                processoId,
+                arquivoId,
+                processo.get(0).etapa(),
+                processo.get(0).situacao(),
+                poligonos.size(),
+                areaTotal,
+                poligonos,
+                totais,
+                intersecoes,
+                intersecoes.stream().filter(i -> i.categoria() == Categoria.ALERTA).toList());
     }
 }
