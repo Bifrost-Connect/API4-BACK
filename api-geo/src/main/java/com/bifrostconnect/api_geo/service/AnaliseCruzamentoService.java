@@ -133,15 +133,17 @@ public class AnaliseCruzamentoService {
 
         String sql = SQL_SOBREPOSICOES.formatted(placeholders(bases.size()), placeholders(fontes.size()));
 
-        return jdbcTemplate.query(sql, (rs, i) -> new LinhaSobreposicao(
-                rs.getLong("arquivo_processado_id"),
-                rs.getString("codigo_imovel"),
-                rs.getBigDecimal("area_hectares"),
-                new Sobreposicao(
-                        calculoAnaliticoService.categoriaDaFonte(rs.getString("fonte_camada")),
-                        rs.getString("fonte_camada"),
-                        rs.getString("codigo_alerta_app"),
-                        rs.getBigDecimal("hectares_sobrepostos"))), argumentos.toArray());
+        // Tarefa 15: o ST_Area do imóvel roda aqui; geometria que quebra a conta vira 422
+        return ExecucaoGeoespacial.executar(jdbcTemplate, "consulta de sobreposições das bases publicadas",
+                () -> jdbcTemplate.query(sql, (rs, i) -> new LinhaSobreposicao(
+                        rs.getLong("arquivo_processado_id"),
+                        rs.getString("codigo_imovel"),
+                        rs.getBigDecimal("area_hectares"),
+                        new Sobreposicao(
+                                calculoAnaliticoService.categoriaDaFonte(rs.getString("fonte_camada")),
+                                rs.getString("fonte_camada"),
+                                rs.getString("codigo_alerta_app"),
+                                rs.getBigDecimal("hectares_sobrepostos"))), argumentos.toArray()));
     }
 
     private CruzamentoAnaliseResponse montar(

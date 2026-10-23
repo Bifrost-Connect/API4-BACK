@@ -1,7 +1,6 @@
 package com.bifrostconnect.api_geo.service;
 
 import java.math.BigDecimal;
-import java.sql.Savepoint;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -13,7 +12,6 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -135,21 +133,11 @@ public class CalculoAnaliticoService {
 
     // savepoint: se o PostGIS estourar no meio, desfaz só o que o cálculo gravou
     // e a transação do Tratamento continua de pé pra mandar a carga pra quarentena (Tarefa 12).
-    // Não dá pra usar Propagation.NESTED: com JPA/Hibernate o Spring recusa
-    // ("JpaDialect does not support savepoints"), então o savepoint é feito na mão
-    // na mesma conexão da transação do Tratamento
+    // Desde a Tarefa 15 o savepoint e o try/catch ficam no ExecucaoGeoespacial, que também
+    // transforma o erro do PostGIS (divisão por zero, TopologyException...) em 422
     public ResultadoCalculoAnalitico calcular(Processo processo, ArquivoProcessado copiaTrabalho) {
-        return jdbcTemplate.execute((ConnectionCallback<ResultadoCalculoAnalitico>) conexao -> {
-            Savepoint savepoint = conexao.setSavepoint();
-            try {
-                ResultadoCalculoAnalitico resultado = calcularNoSavepoint(processo, copiaTrabalho);
-                conexao.releaseSavepoint(savepoint);
-                return resultado;
-            } catch (RuntimeException e) {
-                conexao.rollback(savepoint);
-                throw e;
-            }
-        });
+        return ExecucaoGeoespacial.executar(jdbcTemplate, "cálculo de área e cruzamentos espaciais",
+                () -> calcularNoSavepoint(processo, copiaTrabalho));
     }
 
     private ResultadoCalculoAnalitico calcularNoSavepoint(Processo processo, ArquivoProcessado copiaTrabalho) {
@@ -233,9 +221,11 @@ public class CalculoAnaliticoService {
         List<Long> copias = jdbcTemplate.query(SQL_ULTIMA_COPIA, (rs, i) -> rs.getLong("id"), processoId);
         Long arquivoId = copias.isEmpty() ? null : copias.get(0);
 
+        // Tarefa 15: o ST_Area é refeito na consulta, então também pode estourar aqui
         List<AreaPoligono> poligonos = arquivoId == null ? List.of()
-                : jdbcTemplate.query(SQL_AREA, (rs, i) -> new AreaPoligono(
-                        rs.getString("codigo_imovel"), rs.getBigDecimal("hectares")), arquivoId);
+                : ExecucaoGeoespacial.executar(jdbcTemplate, "consulta das áreas dos polígonos",
+                        () -> jdbcTemplate.query(SQL_AREA, (rs, i) -> new AreaPoligono(
+                                rs.getString("codigo_imovel"), rs.getBigDecimal("hectares")), arquivoId));
 
         List<Cruzamento> cruzamentos = arquivoId == null ? List.of()
                 : jdbcTemplate.query(SQL_CRUZAMENTOS_GRAVADOS, (rs, i) -> new Cruzamento(

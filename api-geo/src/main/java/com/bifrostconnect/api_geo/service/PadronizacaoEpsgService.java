@@ -202,21 +202,25 @@ public class PadronizacaoEpsgService {
         if (geometrias.isEmpty()) {
             return List.of();
         }
-        return jdbcTemplate.execute((ConnectionCallback<List<String>>) conexao -> {
-            Array array = conexao.createArrayOf("text", geometrias.toArray());
-            try (PreparedStatement ps = conexao.prepareStatement(SQL_TRANSFORMAR)) {
-                ps.setInt(1, srid);
-                ps.setArray(2, array);
-                List<String> resultado = new ArrayList<>(geometrias.size());
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        resultado.add(rs.getString(1));
+        // Tarefa 15: SRID que o PROJ não sabe projetar ou coordenada fora do domínio
+        // estoura aqui; vira 422 e a carga vai pra Quarentena em vez de derrubar a requisição
+        return ExecucaoGeoespacial.executar(jdbcTemplate,
+                "conversão de coordenadas EPSG:" + srid + " -> EPSG:" + EPSG_OFICIAL,
+                () -> jdbcTemplate.execute((ConnectionCallback<List<String>>) conexao -> {
+                    Array array = conexao.createArrayOf("text", geometrias.toArray());
+                    try (PreparedStatement ps = conexao.prepareStatement(SQL_TRANSFORMAR)) {
+                        ps.setInt(1, srid);
+                        ps.setArray(2, array);
+                        List<String> resultado = new ArrayList<>(geometrias.size());
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                resultado.add(rs.getString(1));
+                            }
+                        }
+                        return resultado;
+                    } finally {
+                        array.free();
                     }
-                }
-                return resultado;
-            } finally {
-                array.free();
-            }
-        });
+                }));
     }
 }

@@ -17,6 +17,7 @@ import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico;
 import com.bifrostconnect.api_geo.dto.ResultadoValidacaoTopologica;
 import com.bifrostconnect.api_geo.entity.ArquivoProcessado;
 import com.bifrostconnect.api_geo.entity.Processo;
+import com.bifrostconnect.api_geo.exception.FalhaGeoespacialException;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
 
 @Service
@@ -241,6 +242,10 @@ public class ProcessoService {
 
             processo.setEpsgDestino(PadronizacaoEpsgService.EPSG_OFICIAL);
 
+        } catch (FalhaGeoespacialException e) {
+            // Tarefa 15: tem que vir antes do ResponseStatusException (ela é filha dele)
+            throw enviarParaQuarentenaGeoespacial(processo, usuarioId, e);
+
         } catch (ResponseStatusException e) {
             throw e;
 
@@ -286,6 +291,9 @@ public class ProcessoService {
 
         try {
             topologia = validacaoTopologicaService.validar(processo, copiaTrabalho);
+
+        } catch (FalhaGeoespacialException e) {
+            throw enviarParaQuarentenaGeoespacial(processo, usuarioId, e);
 
         } catch (Exception e) {
             String mensagem = "Falha na validação topológica dos polígonos: "
@@ -343,6 +351,11 @@ public class ProcessoService {
 
         try {
             calculo = calculoAnaliticoService.calcular(processo, copiaTrabalho);
+
+        } catch (FalhaGeoespacialException e) {
+            // Tarefa 15: erro do PostGIS na conta continua indo pra Quarentena (Tarefa 12),
+            // mas agora a resposta é 422 em vez de 200
+            throw enviarParaQuarentenaGeoespacial(processo, usuarioId, e);
 
         } catch (Exception e) {
             // Tarefa 12: erro do PostGIS no meio da conta (TopologyException etc.) não é falha
@@ -436,6 +449,18 @@ public class ProcessoService {
             String motivo,
             List<String> detalhes) {
 
+        return enviarParaQuarentena(processo, usuarioId, acaoAuditoria, motivo, detalhes, null, null);
+    }
+
+    private Processo enviarParaQuarentena(
+            Processo processo,
+            Long usuarioId,
+            String acaoAuditoria,
+            String motivo,
+            List<String> detalhes,
+            String codigoErro,
+            String detalheTecnico) {
+
         String mensagem = motivo
                 + " Tratamento interrompido e carga enviada para a Quarentena, aguardando decisão do Gestor.";
 
@@ -453,7 +478,9 @@ public class ProcessoService {
         auditoriaLogService.registrarLog(
                 processo,
                 "WARNING",
-                mensagem + " Detalhes: " + amostra);
+                mensagem + " Detalhes: " + amostra,
+                codigoErro,
+                detalheTecnico);
 
         auditoriaLogService.registrarAuditoria(
                 usuarioId,
@@ -465,6 +492,27 @@ public class ProcessoService {
                 "Carga do processo " + processo.getId() + " está em Quarentena na etapa de Tratamento: " + motivo);
 
         return salvarGarantindoCampos(processo);
+    }
+
+    // Tarefa 15: o PostGIS estourou numa conta geométrica ou na reprojeção (divisão por zero,
+    // erro de projeção, TopologyException). O ExecucaoGeoespacial já voltou o savepoint, então a
+    // transação ainda grava: manda a carga pra Quarentena com o código GEO_... no log e devolve
+    // a própria exceção (422) pro controller. O noRollbackFor do processarArquivo segura o commit
+    private FalhaGeoespacialException enviarParaQuarentenaGeoespacial(
+            Processo processo,
+            Long usuarioId,
+            FalhaGeoespacialException falha) {
+
+        enviarParaQuarentena(
+                processo,
+                usuarioId,
+                "QUARENTENA_GEOESPACIAL",
+                "Falha geoespacial na " + falha.getOperacao() + " (" + falha.getTipo().getDescricao() + ").",
+                List.of(falha.getDetalheTecnico()),
+                falha.getCodigoErro(),
+                falha.getDetalheTecnico());
+
+        return falha;
     }
 
     @Transactional

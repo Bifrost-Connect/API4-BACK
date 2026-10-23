@@ -195,7 +195,9 @@ public class FeicaoCargaService {
         if (lote.isEmpty()) {
             return 0;
         }
-        jdbcTemplate.batchUpdate(SQL_INSERIR, lote);
+        // Tarefa 15: o ST_GeomFromGeoJSON/ST_SetSRID pode recusar a geometria aqui
+        ExecucaoGeoespacial.executar(jdbcTemplate, "gravação das geometrias da carga",
+                () -> jdbcTemplate.batchUpdate(SQL_INSERIR, lote));
         int quantidade = lote.size();
         lote.clear();
         return quantidade;

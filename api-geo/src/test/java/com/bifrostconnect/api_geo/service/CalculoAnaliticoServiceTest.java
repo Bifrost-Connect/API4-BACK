@@ -38,6 +38,8 @@ class CalculoAnaliticoServiceTest {
         // só usados na consulta da Tarefa 13
         List<Map<String, Object>> processos = List.of();
         List<Map<String, Object>> copias = List.of();
+        // Tarefa 15: se preenchido, a consulta de área estoura como se fosse o PostGIS
+        RuntimeException erroNaArea;
 
         // o savepoint do cálculo pede a conexão; aqui qualquer uma serve
         @Override
@@ -53,6 +55,9 @@ class CalculoAnaliticoServiceTest {
         public <T> List<T> query(String sql, RowMapper<T> rowMapper, Object... args) {
             sqls.add(sql);
             argumentos.add(args);
+            if (erroNaArea != null && sql.contains("ST_Area(geom::geography)")) {
+                throw erroNaArea;
+            }
             List<Map<String, Object>> linhas;
             if (sql.contains("FROM processo p")) {
                 linhas = processos;
@@ -249,5 +254,40 @@ class CalculoAnaliticoServiceTest {
         ResponseStatusException erro = assertThrows(ResponseStatusException.class, () -> service.consultar(99L));
 
         assertEquals(HttpStatus.NOT_FOUND, erro.getStatusCode());
+    }
+
+    // ---- Tarefa 15: erro do PostGIS no meio da conta ----
+
+    private static RuntimeException divisaoPorZero() {
+        return new org.springframework.jdbc.UncategorizedSQLException("ST_Area", "SELECT ...",
+                new java.sql.SQLException("ERROR: division by zero", "22012"));
+    }
+
+    @Test
+    void divisaoPorZeroNoCalculoVira422() {
+        BancoFalso banco = new BancoFalso();
+        banco.erroNaArea = divisaoPorZero();
+        CalculoAnaliticoService service = new CalculoAnaliticoService(banco,
+                List.of("INCAR_APP"), List.of(), List.of());
+
+        com.bifrostconnect.api_geo.exception.FalhaGeoespacialException falha = assertThrows(
+                com.bifrostconnect.api_geo.exception.FalhaGeoespacialException.class,
+                () -> service.calcular(processo(), copia()));
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, falha.getStatusCode());
+        assertEquals("GEO_DIVISAO_POR_ZERO", falha.getCodigoErro());
+        assertEquals("cálculo de área e cruzamentos espaciais", falha.getOperacao());
+    }
+
+    @Test
+    void divisaoPorZeroNaConsultaTambemVira422() {
+        BancoFalso banco = new BancoFalso();
+        banco.processos = List.of(Map.of("etapa", "TRATAMENTO", "situacao", "CONCLUIDA"));
+        banco.copias = List.of(Map.of("id", 42L));
+        banco.erroNaArea = divisaoPorZero();
+        CalculoAnaliticoService service = new CalculoAnaliticoService(banco, List.of(), List.of(), List.of());
+
+        ResponseStatusException falha = assertThrows(ResponseStatusException.class, () -> service.consultar(7L));
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, falha.getStatusCode());
     }
 }

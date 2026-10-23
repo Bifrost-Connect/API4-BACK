@@ -107,9 +107,14 @@ public class ValidacaoTopologicaService {
                 feicaoCargaService.carregar(arquivoId, Path.of(copiaTrabalho.getUrlArmazenamento()));
 
         List<Problema> problemas = new ArrayList<>(carga.rejeitadas());
-        problemas.addAll(buscarInvalidas(arquivoId));
-        problemas.addAll(buscarDuplicadas(arquivoId));
-        problemas.addAll(buscarSobrepostas(arquivoId));
+        // Tarefa 15: ST_IsValid/ST_Equals/ST_Intersection nas geometrias da carga; se o GEOS
+        // estourar, vira FalhaGeoespacialException (422) e o Tratamento manda pra Quarentena
+        problemas.addAll(ExecucaoGeoespacial.executar(jdbcTemplate, "validação topológica dos polígonos", () -> {
+            List<Problema> encontrados = new ArrayList<>(buscarInvalidas(arquivoId));
+            encontrados.addAll(buscarDuplicadas(arquivoId));
+            encontrados.addAll(buscarSobrepostas(arquivoId));
+            return encontrados;
+        }));
 
         registrarOcorrencias(processo, problemas);
 

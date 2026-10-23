@@ -27,6 +27,7 @@ import com.bifrostconnect.api_geo.dto.ProcessoDashboardResponse;
 import com.bifrostconnect.api_geo.dto.ProcessoMetricasResponse;
 import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
 import com.bifrostconnect.api_geo.entity.Processo;
+import com.bifrostconnect.api_geo.exception.FalhaGeoespacialException;
 import com.bifrostconnect.api_geo.repository.ArquivoOriginalRepository;
 import com.bifrostconnect.api_geo.service.ProcessoDashboardService;
 import com.bifrostconnect.api_geo.service.ProcessoService;
@@ -161,6 +162,14 @@ public class ProcessoController {
                     );
 
             return ResponseEntity.ok(processoAtualizado);
+
+        } catch (FalhaGeoespacialException e) {
+            // Tarefa 15: a carga já foi pra Quarentena; devolve 422 com o código pro front saber o motivo
+            return ResponseEntity.status(e.getStatusCode()).body(java.util.Map.of(
+                    "erro", e.getReason(),
+                    "codigo", e.getCodigoErro(),
+                    "operacao", e.getOperacao(),
+                    "quarentena", true));
 
         }catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(

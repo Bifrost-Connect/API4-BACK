@@ -30,6 +30,11 @@ public class AuditoriaLogService {
     }
 
     public void registrarLog(Processo processo, String nivel, String mensagem) {
+        registrarLog(processo, nivel, mensagem, null, null);
+    }
+
+    // Tarefa 15: mesmo log, mas com código de erro e detalhe técnico (usado pela Quarentena geoespacial)
+    public void registrarLog(Processo processo, String nivel, String mensagem, String codigoErro, String detalhes) {
         LogProcessamento log = new LogProcessamento();
         
         if (processo != null && processo.getId() != null) {
@@ -51,6 +56,8 @@ public class AuditoriaLogService {
 
         log.setNivel(nivel);
         log.setMensagem(mensagem);
+        log.setCodigoErro(codigoErro);
+        log.setDetalhes(detalhes);
         log.setDataHora(LocalDateTime.now());
 
         logRepository.save(log);
