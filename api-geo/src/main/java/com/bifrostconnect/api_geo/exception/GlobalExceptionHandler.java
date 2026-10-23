@@ -45,6 +45,19 @@ public class GlobalExceptionHandler {
                 .body(error);
     }
 
+    // US09 - Tarefa 8: ID inexistente sai sempre no mesmo formato { "erro": ... } com 404
+    @ExceptionHandler(RecursoNaoEncontradoException.class)
+    public ResponseEntity<Map<String, String>> handleRecursoNaoEncontrado(
+            RecursoNaoEncontradoException ex) {
+
+        Map<String, String> error = new HashMap<>();
+        error.put("erro", ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(error);
+    }
+
     @ExceptionHandler(TimeoutException.class)
     public ResponseEntity<Map<String, String>> handleTimeout(
             TimeoutException ex) {
