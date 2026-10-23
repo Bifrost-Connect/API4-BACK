@@ -33,7 +33,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.http.HttpStatus;
 
 @RestController
-@RequestMapping({"/processos", "/api/processos"})
+@RequestMapping("/processos")
 public class ProcessoController {
 
     private final ProcessoService processoService;

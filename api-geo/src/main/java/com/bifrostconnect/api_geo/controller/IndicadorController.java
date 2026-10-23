@@ -11,7 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping({"/api/indicadores", "/indicadores", "/api/v1/indicadores", "/versoes", "/api/versoes"})
+@RequestMapping("/indicadores")
 @RequiredArgsConstructor
 public class IndicadorController {
 

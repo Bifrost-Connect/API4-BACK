@@ -26,6 +26,12 @@ public class MetadadosCargaService {
         processo.setOperadorId(request.getOperadorId());
         processo.setAnoSafra(request.getAnoSafra());
         processo.setEpsgOrigem(request.getEpsgOrigem());
+        processo.setCompetencia(request.getCompetencia());
+        processo.setFormato(request.getFormato());
+        processo.setClassificacaoAcesso(request.getClassificacaoAcesso());
+        processo.setCoberturaEspacial(request.getCoberturaEspacial());
+        processo.setCoberturaTemporalInicio(request.getCoberturaTemporalInicio());
+        processo.setCoberturaTemporalFim(request.getCoberturaTemporalFim());
         processo.setDataCriacao(java.time.LocalDateTime.now());
 
         Processo processoSalvo = processoRepository.saveAndFlush(processo);
@@ -47,6 +53,18 @@ public class MetadadosCargaService {
             }
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("O ano da safra deve ser um valor numérico");
+        }
+
+        if (request.getCoberturaTemporalInicio() != null
+                && request.getCoberturaTemporalFim() != null
+                && request.getCoberturaTemporalInicio().isAfter(request.getCoberturaTemporalFim())) {
+            throw new IllegalArgumentException(
+                "A cobertura temporal inicial não pode ser posterior à final");
+        }
+
+        if (request.getCompetencia() != null && !request.getCompetencia().isBlank()
+                && !request.getCompetencia().matches("\\d{4}-(0[1-9]|1[0-2])")) {
+            throw new IllegalArgumentException("A competência deve estar no formato AAAA-MM");
         }
 
         if (request.getEpsgOrigem() != null && !request.getEpsgOrigem().equals("4674") && !request.getEpsgOrigem().equals("4326")) {

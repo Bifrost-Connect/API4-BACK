@@ -13,7 +13,7 @@ import com.bifrostconnect.api_geo.entity.ArquivoProcessado;
 import com.bifrostconnect.api_geo.service.ArquivoProcessadoService;
 
 @RestController
-@RequestMapping({"/api/v1/arquivos-processados", "/v1/arquivos-processados", "/arquivos-processados", "/api/arquivos-processados"})
+@RequestMapping("/arquivos-processados")
 public class ArquivoProcessadoController {
 
     private final ArquivoProcessadoService arquivoProcessadoService;

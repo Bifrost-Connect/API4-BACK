@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.bifrostconnect.api_geo.service.DominioService;
 
 @RestController
-@RequestMapping({"/dominios", "/api/dominios"})
+@RequestMapping("/dominios")
 public class DominioController {
 
     private final DominioService dominioService;

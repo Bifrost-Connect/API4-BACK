@@ -67,4 +67,23 @@ public class Processo {
 
     @Column(name = "etapa_atual_id")
     private Long etapaAtualId;
+
+    // Metadados expandidos (US05)
+    @Column(name = "competencia")
+    private String competencia;
+
+    @Column(name = "formato")
+    private String formato;
+
+    @Column(name = "classificacao_acesso")
+    private String classificacaoAcesso;
+
+    @Column(name = "cobertura_espacial")
+    private String coberturaEspacial;
+
+    @Column(name = "cobertura_temporal_inicio")
+    private java.time.LocalDate coberturaTemporalInicio;
+
+    @Column(name = "cobertura_temporal_fim")
+    private java.time.LocalDate coberturaTemporalFim;
 }

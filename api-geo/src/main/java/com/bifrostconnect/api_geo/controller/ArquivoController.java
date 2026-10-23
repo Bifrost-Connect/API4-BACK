@@ -27,7 +27,7 @@ import com.bifrostconnect.api_geo.service.ArquivoService;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping({"/api/v1/arquivos", "/v1/arquivos", "/arquivos", "/api/arquivos"})
+@RequestMapping("/arquivos")
 @RequiredArgsConstructor
 public class ArquivoController {
 

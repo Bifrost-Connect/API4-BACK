@@ -104,6 +104,28 @@ public void setEpsgOrigem(String epsgOrigem) {
 this.epsgOrigem = epsgOrigem;
 
 }
+
+// Metadados expandidos (US05) - opcionais para manter compatibilidade com clientes antigos
+private String competencia;
+private String formato;
+private String classificacaoAcesso;
+private String coberturaEspacial;
+private java.time.LocalDate coberturaTemporalInicio;
+private java.time.LocalDate coberturaTemporalFim;
+
+public String getCompetencia() { return competencia; }
+public void setCompetencia(String competencia) { this.competencia = competencia; }
+public String getFormato() { return formato; }
+public void setFormato(String formato) { this.formato = formato; }
+public String getClassificacaoAcesso() { return classificacaoAcesso; }
+public void setClassificacaoAcesso(String classificacaoAcesso) { this.classificacaoAcesso = classificacaoAcesso; }
+public String getCoberturaEspacial() { return coberturaEspacial; }
+public void setCoberturaEspacial(String coberturaEspacial) { this.coberturaEspacial = coberturaEspacial; }
+public java.time.LocalDate getCoberturaTemporalInicio() { return coberturaTemporalInicio; }
+public void setCoberturaTemporalInicio(java.time.LocalDate d) { this.coberturaTemporalInicio = d; }
+public java.time.LocalDate getCoberturaTemporalFim() { return coberturaTemporalFim; }
+public void setCoberturaTemporalFim(java.time.LocalDate d) { this.coberturaTemporalFim = d; }
+
 public Long getOperadorId() {
     return operadorId;
 }
