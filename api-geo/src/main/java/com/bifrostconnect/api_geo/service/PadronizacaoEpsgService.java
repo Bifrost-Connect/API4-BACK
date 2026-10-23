@@ -33,7 +33,7 @@ public class PadronizacaoEpsgService {
 
     private static final String CRS_OFICIAL_URN = "urn:ogc:def:crs:EPSG::" + EPSG_OFICIAL;
 
-   
+
     private static final int LOTE_MAX_FEICOES = 500;
     private static final long LOTE_MAX_CARACTERES = 5_000_000L;
 
@@ -61,7 +61,7 @@ public class PadronizacaoEpsgService {
         }
     }
 
-    /** Aceita "4674", "EPSG:4674" ou "epsg:4674 " e devolve só o código ("4674"). */
+    // aceita "4674", "EPSG:4674" ou "epsg:4674 " e devolve só o código ("4674")
     public String normalizarEpsg(String valor) {
         if (valor == null || valor.isBlank()) {
             throw new IllegalArgumentException("EPSG é obrigatório e deve ser um código numérico válido.");
@@ -88,7 +88,7 @@ public class PadronizacaoEpsgService {
         try {
             reprojetar(origem, destino, srid);
         } catch (IOException | RuntimeException e) {
-            
+
             Files.deleteIfExists(destino);
             throw e;
         }

@@ -56,7 +56,7 @@ class CalculoAnaliticoServiceTest {
             List<Map<String, Object>> linhas;
             if (sql.contains("FROM processo p")) {
                 linhas = processos;
-            } else if (sql.contains("FROM arquivo_processado ap")) {
+            } else if (sql.contains("FROM vw_copia_vigente cv")) {
                 linhas = copias;
             } else if (sql.contains("ST_Area(geom::geography)")) {
                 linhas = areas;

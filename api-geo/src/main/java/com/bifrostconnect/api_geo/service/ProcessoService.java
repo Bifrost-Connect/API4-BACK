@@ -1,9 +1,10 @@
 package com.bifrostconnect.api_geo.service;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
-
 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -11,8 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import java.io.IOException;
-import java.nio.file.Files;
 
 import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico;
 import com.bifrostconnect.api_geo.dto.ResultadoValidacaoTopologica;
@@ -103,330 +102,328 @@ public class ProcessoService {
     }
 
 
-    /*
-     * noRollbackFor: quando a etapa termina em falha controlada (422/415) o log de erro, a
-     * auditoria e o EPSG detectado já gravados NÃO podem ser desfeitos pelo rollback - senão
-     * o processo ficaria FALHOU sem nenhuma explicação registrada.
-     */
+    // noRollbackFor: quando a etapa termina em falha controlada (422/415) o log de erro, a
+    // auditoria e o EPSG detectado já gravados NÃO podem ser desfeitos pelo rollback - senão
+    // o processo ficaria FALHOU sem nenhuma explicação registrada
     @Transactional(noRollbackFor = ResponseStatusException.class)
     public Processo processarArquivo(
-        Processo processo,
-        String nomeArquivo,
-        Path caminhoArquivo,
-        Long usuarioId) {
+            Processo processo,
+            String nomeArquivo,
+            Path caminhoArquivo,
+            Long usuarioId) {
 
-    verificarSeFechado(processo);
+        verificarSeFechado(processo);
 
-    if (caminhoArquivo == null) {
-        throw new ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                "O arquivo é obrigatório para iniciar o tratamento.");
-    }
+        if (caminhoArquivo == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "O arquivo é obrigatório para iniciar o tratamento.");
+        }
 
-    Path caminhoGeoJson = null;
+        Path caminhoGeoJson = null;
 
-    try {
-        caminhoGeoJson = geoJsonArquivoService.preparar(caminhoArquivo);
+        try {
+            caminhoGeoJson = geoJsonArquivoService.preparar(caminhoArquivo);
 
-        return processarArquivoGeoJson(
-                processo,
-                nomeArquivo,
-                caminhoGeoJson,
-                usuarioId);
+            return processarArquivoGeoJson(
+                    processo,
+                    nomeArquivo,
+                    caminhoGeoJson,
+                    usuarioId);
 
-    } catch (ResponseStatusException e) {
-        throw e;
+        } catch (ResponseStatusException e) {
+            throw e;
 
-    } catch (IllegalArgumentException e) {
-        throw new ResponseStatusException(
-                HttpStatus.UNSUPPORTED_MEDIA_TYPE,
-                e.getMessage(),
-                e);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    e.getMessage(),
+                    e);
 
-    } catch (java.io.IOException e) {
-        throw new ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                "Não foi possível ler ou preparar o arquivo GeoJSON.",
-                e);
+        } catch (IOException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Não foi possível ler ou preparar o arquivo GeoJSON.",
+                    e);
 
-    } finally {
-        if (caminhoGeoJson != null && !caminhoGeoJson.equals(caminhoArquivo)) {
-            try {
-                java.nio.file.Files.deleteIfExists(caminhoGeoJson);
-            } catch (java.io.IOException e) {
-                auditoriaLogService.registrarLog(
-                        processo,
-                        "WARNING",
-                        "Não foi possível excluir o GeoJSON temporário: "
-                                + e.getMessage());
+        } finally {
+            if (caminhoGeoJson != null && !caminhoGeoJson.equals(caminhoArquivo)) {
+                try {
+                    Files.deleteIfExists(caminhoGeoJson);
+                } catch (IOException e) {
+                    auditoriaLogService.registrarLog(
+                            processo,
+                            "WARNING",
+                            "Não foi possível excluir o GeoJSON temporário: "
+                                    + e.getMessage());
+                }
             }
         }
     }
-}
 
-    /** ETAPA TRATAMENTO padroniza e checagem de EPSG. */
+    // etapa TRATAMENTO: padronização e checagem de EPSG
     private Processo processarArquivoGeoJson(
-        Processo processo,
-        String nomeOriginal,
-        Path caminhoGeoJson,
-        Long usuarioId) {
+            Processo processo,
+            String nomeOriginal,
+            Path caminhoGeoJson,
+            Long usuarioId) {
 
-    processoEstadoService.atualizarEstado(
-            processo,
-            "TRATAMENTO",
-            "EM_ANDAMENTO",
-            "Tratamento iniciado: padronização e checagem de EPSG.");
+        processoEstadoService.atualizarEstado(
+                processo,
+                "TRATAMENTO",
+                "EM_ANDAMENTO",
+                "Tratamento iniciado: padronização e checagem de EPSG.");
 
-    auditoriaLogService.registrarLog(
-            processo,
-            "INFO",
-            "Iniciando fluxo do processo para o arquivo: " + nomeOriginal);
+        auditoriaLogService.registrarLog(
+                processo,
+                "INFO",
+                "Iniciando fluxo do processo para o arquivo: " + nomeOriginal);
 
-    auditoriaLogService.registrarAuditoria(
-            usuarioId,
-            "INICIO_PROCESSO",
-            "Processo ID: " + processo.getId());
+        auditoriaLogService.registrarAuditoria(
+                usuarioId,
+                "INICIO_PROCESSO",
+                "Processo ID: " + processo.getId());
 
-    String epsgDeclarado = null;
-    String epsgDetectado = null;
-    ArquivoProcessado copiaTrabalho;
+        String epsgDeclarado = null;
+        String epsgDetectado = null;
+        ArquivoProcessado copiaTrabalho;
 
-    try {
-        epsgDeclarado = padronizacaoEpsgService.normalizarEpsg(processo.getEpsgOrigem());
-        geoJsonEpsgService.validarCodigoEpsg(epsgDeclarado);
+        try {
+            epsgDeclarado = padronizacaoEpsgService.normalizarEpsg(processo.getEpsgOrigem());
+            geoJsonEpsgService.validarCodigoEpsg(epsgDeclarado);
 
-        epsgDetectado = geoJsonEpsgService.detectar(caminhoGeoJson);
+            epsgDetectado = geoJsonEpsgService.detectar(caminhoGeoJson);
 
-        // EPSG detectado fica em coluna própria, separada do declarado (epsg_origem).
-        processo.setEpsgDetectado(epsgDetectado);
+            // EPSG detectado fica em coluna própria, separada do declarado (epsg_origem).
+            processo.setEpsgDetectado(epsgDetectado);
 
-        PadronizacaoEpsgService.ResultadoChecagem checagem =
-                padronizacaoEpsgService.comparar(epsgDeclarado, epsgDetectado);
+            PadronizacaoEpsgService.ResultadoChecagem checagem =
+                    padronizacaoEpsgService.comparar(epsgDeclarado, epsgDetectado);
 
-        if (checagem.divergente()) {
+            if (checagem.divergente()) {
 
-            String mensagem = "Divergência de EPSG: declarado EPSG:"
-                    + epsgDeclarado
-                    + ", detectado EPSG:"
-                    + epsgDetectado
-                    + ". Tratamento bloqueado. Corrija manualmente o cadastro "
-                    + "ou o arquivo e envie novamente para validação.";
+                String mensagem = "Divergência de EPSG: declarado EPSG:"
+                        + epsgDeclarado
+                        + ", detectado EPSG:"
+                        + epsgDetectado
+                        + ". Tratamento bloqueado. Corrija manualmente o cadastro "
+                        + "ou o arquivo e envie novamente para validação.";
+
+                processoEstadoService.atualizarEstado(
+                        processo,
+                        "TRATAMENTO",
+                        "COM_RESSALVA",
+                        mensagem);
+
+                auditoriaLogService.registrarLog(
+                        processo,
+                        "WARNING",
+                        mensagem);
+
+                auditoriaLogService.registrarAuditoria(
+                        usuarioId,
+                        "DIVERGENCIA_EPSG",
+                        "Processo ID: " + processo.getId()
+                                + "; declarado=" + epsgDeclarado
+                                + "; detectado=" + epsgDetectado);
+
+                // Interrompido: sem cópia de trabalho e sem validações.
+                return salvarGarantindoCampos(processo);
+            }
+
+            geoJsonEpsgService.validarCodigoEpsg(epsgDetectado);
+
+            copiaTrabalho = arquivoProcessadoService.criarCopiaPadronizada(
+                    processo.getId(),
+                    processo.getEtapaAtualId(), // TRATAMENTO: etapa que gerou a cópia
+                    caminhoGeoJson,
+                    epsgDetectado);
+
+            processo.setEpsgDestino(PadronizacaoEpsgService.EPSG_OFICIAL);
+
+        } catch (ResponseStatusException e) {
+            throw e;
+
+        } catch (Exception e) {
+            String mensagem = "Falha na padronização/verificação do EPSG: "
+                    + e.getMessage();
 
             processoEstadoService.atualizarEstado(
                     processo,
                     "TRATAMENTO",
-                    "COM_RESSALVA",
+                    "FALHOU",
                     mensagem);
 
             auditoriaLogService.registrarLog(
                     processo,
-                    "WARNING",
+                    "ERROR",
                     mensagem);
 
-            auditoriaLogService.registrarAuditoria(
-                    usuarioId,
-                    "DIVERGENCIA_EPSG",
-                    "Processo ID: " + processo.getId()
-                            + "; declarado=" + epsgDeclarado
-                            + "; detectado=" + epsgDetectado);
+            salvarGarantindoCampos(processo);
 
-            // Interrompido: sem cópia de trabalho e sem validações.
-            return salvarGarantindoCampos(processo);
+            throw new ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    mensagem,
+                    e);
         }
 
-        geoJsonEpsgService.validarCodigoEpsg(epsgDetectado);
+        auditoriaLogService.registrarLog(
+                processo,
+                "INFO",
+                "EPSG padronizado: declarado EPSG:" + epsgDeclarado
+                        + ", detectado EPSG:" + epsgDetectado
+                        + ", cópia de trabalho em EPSG:" + PadronizacaoEpsgService.EPSG_OFICIAL
+                        + " (arquivo_processado ID: " + copiaTrabalho.getId() + ").");
 
-        copiaTrabalho = arquivoProcessadoService.criarCopiaPadronizada(
-                processo.getId(),
-                processo.getEtapaAtualId(), // TRATAMENTO: etapa que gerou a cópia
-                caminhoGeoJson,
-                epsgDetectado);
-
-        processo.setEpsgDestino(PadronizacaoEpsgService.EPSG_OFICIAL);
-
-    } catch (ResponseStatusException e) {
-        throw e;
-
-    } catch (Exception e) {
-        String mensagem = "Falha na padronização/verificação do EPSG: "
-                + e.getMessage();
-
+        // 2ª parte do Tratamento: checa a topologia dos polígonos da cópia de trabalho
         processoEstadoService.atualizarEstado(
                 processo,
                 "TRATAMENTO",
-                "FALHOU",
-                mensagem);
+                "EM_ANDAMENTO",
+                "Tratamento: validação topológica dos polígonos.");
+
+        ResultadoValidacaoTopologica topologia;
+
+        try {
+            topologia = validacaoTopologicaService.validar(processo, copiaTrabalho);
+
+        } catch (Exception e) {
+            String mensagem = "Falha na validação topológica dos polígonos: "
+                    + e.getMessage();
+
+            processoEstadoService.atualizarEstado(
+                    processo,
+                    "TRATAMENTO",
+                    "FALHOU",
+                    mensagem);
+
+            auditoriaLogService.registrarLog(
+                    processo,
+                    "ERROR",
+                    mensagem);
+
+            salvarGarantindoCampos(processo);
+
+            throw new ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    mensagem,
+                    e);
+        }
 
         auditoriaLogService.registrarLog(
                 processo,
-                "ERROR",
-                mensagem);
+                topologia.possuiProblemas() ? "WARNING" : "INFO",
+                "Validação topológica: " + topologia.feicoesCarregadas() + " de "
+                        + topologia.totalFeicoes() + " feições carregadas; "
+                        + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.GEOMETRIA_INVALIDA) + " inválidas/abertas, "
+                        + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.CODIGO_IMOVEL_DUPLICADO) + " códigos repetidos, "
+                        + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_DUPLICADO) + " duplicados, "
+                        + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_SOBREPOSTO) + " sobreposições.");
 
-        salvarGarantindoCampos(processo);
+        // Tarefa 12: sobreposição/duplicação inaceitável não deixa nem chegar no cálculo
+        List<ResultadoValidacaoTopologica.Problema> inaceitaveis = topologia.problemasInaceitaveis();
+        if (!inaceitaveis.isEmpty()) {
+            return enviarParaQuarentena(
+                    processo,
+                    usuarioId,
+                    "QUARENTENA_TOPOLOGIA",
+                    "Validação topológica encontrou " + inaceitaveis.size()
+                            + " sobreposição(ões)/duplicação(ões) inaceitável(is).",
+                    inaceitaveis.stream().map(ResultadoValidacaoTopologica.Problema::mensagem).toList());
+        }
 
-        throw new ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                mensagem,
-                e);
-    }
-
-    auditoriaLogService.registrarLog(
-            processo,
-            "INFO",
-            "EPSG padronizado: declarado EPSG:" + epsgDeclarado
-                    + ", detectado EPSG:" + epsgDetectado
-                    + ", cópia de trabalho em EPSG:" + PadronizacaoEpsgService.EPSG_OFICIAL
-                    + " (arquivo_processado ID: " + copiaTrabalho.getId() + ").");
-
-    // 2ª parte do Tratamento: checa a topologia dos polígonos da cópia de trabalho
-    processoEstadoService.atualizarEstado(
-            processo,
-            "TRATAMENTO",
-            "EM_ANDAMENTO",
-            "Tratamento: validação topológica dos polígonos.");
-
-    ResultadoValidacaoTopologica topologia;
-
-    try {
-        topologia = validacaoTopologicaService.validar(processo, copiaTrabalho);
-
-    } catch (Exception e) {
-        String mensagem = "Falha na validação topológica dos polígonos: "
-                + e.getMessage();
-
+        // 3ª parte do Tratamento: área de cada polígono válido e cruzamento com APP, RL e Alertas
         processoEstadoService.atualizarEstado(
                 processo,
                 "TRATAMENTO",
-                "FALHOU",
-                mensagem);
+                "EM_ANDAMENTO",
+                "Tratamento: cálculo de área e cruzamentos espaciais.");
+
+        ResultadoCalculoAnalitico calculo;
+
+        try {
+            calculo = calculoAnaliticoService.calcular(processo, copiaTrabalho);
+
+        } catch (Exception e) {
+            // Tarefa 12: erro do PostGIS no meio da conta (TopologyException etc.) não é falha
+            // técnica do sistema, é a geometria da carga que não fecha -> vai pro Gestor decidir
+            return enviarParaQuarentena(
+                    processo,
+                    usuarioId,
+                    "QUARENTENA_CALCULO",
+                    "Erro no cálculo analítico dos polígonos.",
+                    List.of(String.valueOf(e.getMessage())));
+        }
+
+        if (calculo.possuiInconsistencias()) {
+            return enviarParaQuarentena(
+                    processo,
+                    usuarioId,
+                    "QUARENTENA_CALCULO",
+                    "Cálculo analítico encontrou " + calculo.inconsistencias().size()
+                            + " inconsistência(s) matemática(s)/geométrica(s).",
+                    calculo.inconsistencias());
+        }
 
         auditoriaLogService.registrarLog(
                 processo,
-                "ERROR",
-                mensagem);
+                "INFO",
+                "Cálculo analítico: " + calculo.poligonosCalculados() + " polígonos válidos somando "
+                        + calculo.areaTotalHectares().toPlainString() + " ha; sobreposição com APP "
+                        + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.APP).toPlainString() + " ha ("
+                        + calculo.contar(ResultadoCalculoAnalitico.Categoria.APP) + " cruzamentos), Reserva Legal "
+                        + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL).toPlainString() + " ha ("
+                        + calculo.contar(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL) + " cruzamentos), Alertas "
+                        + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.ALERTA).toPlainString() + " ha ("
+                        + calculo.contar(ResultadoCalculoAnalitico.Categoria.ALERTA) + " cruzamentos).");
 
-        salvarGarantindoCampos(processo);
-
-        throw new ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                mensagem,
-                e);
-    }
-
-    auditoriaLogService.registrarLog(
-            processo,
-            topologia.possuiProblemas() ? "WARNING" : "INFO",
-            "Validação topológica: " + topologia.feicoesCarregadas() + " de "
-                    + topologia.totalFeicoes() + " feições carregadas; "
-                    + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.GEOMETRIA_INVALIDA) + " inválidas/abertas, "
-                    + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.CODIGO_IMOVEL_DUPLICADO) + " códigos repetidos, "
-                    + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_DUPLICADO) + " duplicados, "
-                    + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_SOBREPOSTO) + " sobreposições.");
-
-    // Tarefa 12: sobreposição/duplicação inaceitável não deixa nem chegar no cálculo
-    List<ResultadoValidacaoTopologica.Problema> inaceitaveis = topologia.problemasInaceitaveis();
-    if (!inaceitaveis.isEmpty()) {
-        return enviarParaQuarentena(
-                processo,
-                usuarioId,
-                "QUARENTENA_TOPOLOGIA",
-                "Validação topológica encontrou " + inaceitaveis.size()
-                        + " sobreposição(ões)/duplicação(ões) inaceitável(is).",
-                inaceitaveis.stream().map(ResultadoValidacaoTopologica.Problema::mensagem).toList());
-    }
-
-    // 3ª parte do Tratamento: área de cada polígono válido e cruzamento com APP, RL e Alertas
-    processoEstadoService.atualizarEstado(
-            processo,
-            "TRATAMENTO",
-            "EM_ANDAMENTO",
-            "Tratamento: cálculo de área e cruzamentos espaciais.");
-
-    ResultadoCalculoAnalitico calculo;
-
-    try {
-        calculo = calculoAnaliticoService.calcular(processo, copiaTrabalho);
-
-    } catch (Exception e) {
-        // Tarefa 12: erro do PostGIS no meio da conta (TopologyException etc.) não é falha
-        // técnica do sistema, é a geometria da carga que não fecha -> vai pro Gestor decidir
-        return enviarParaQuarentena(
-                processo,
-                usuarioId,
-                "QUARENTENA_CALCULO",
-                "Erro no cálculo analítico dos polígonos.",
-                List.of(String.valueOf(e.getMessage())));
-    }
-
-    if (calculo.possuiInconsistencias()) {
-        return enviarParaQuarentena(
-                processo,
-                usuarioId,
-                "QUARENTENA_CALCULO",
-                "Cálculo analítico encontrou " + calculo.inconsistencias().size()
-                        + " inconsistência(s) matemática(s)/geométrica(s).",
-                calculo.inconsistencias());
-    }
-
-    auditoriaLogService.registrarLog(
-            processo,
-            "INFO",
-            "Cálculo analítico: " + calculo.poligonosCalculados() + " polígonos válidos somando "
-                    + calculo.areaTotalHectares().toPlainString() + " ha; sobreposição com APP "
-                    + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.APP).toPlainString() + " ha ("
-                    + calculo.contar(ResultadoCalculoAnalitico.Categoria.APP) + " cruzamentos), Reserva Legal "
-                    + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL).toPlainString() + " ha ("
-                    + calculo.contar(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL) + " cruzamentos), Alertas "
-                    + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.ALERTA).toPlainString() + " ha ("
-                    + calculo.contar(ResultadoCalculoAnalitico.Categoria.ALERTA) + " cruzamentos).");
-
-    processoEstadoService.atualizarEstado(
-            processo,
-            "VALIDACAO",
-            "EM_ANDAMENTO",
-            "Tratamento concluído. Iniciando validações.");
-
-    Path caminhoCopia = Path.of(copiaTrabalho.getUrlArmazenamento());
-
-    boolean valido = validacaoService.executarValidacoes(
-            processo,
-            copiaTrabalho.getNomeArquivo(),
-            caminhoCopia);
-
-    if (!valido) {
         processoEstadoService.atualizarEstado(
                 processo,
                 "VALIDACAO",
-                "FALHOU",
-                "Inconsistências encontradas. O processo foi movido para a quarentena.");
+                "EM_ANDAMENTO",
+                "Tratamento concluído. Iniciando validações.");
+
+        Path caminhoCopia = Path.of(copiaTrabalho.getUrlArmazenamento());
+
+        boolean valido = validacaoService.executarValidacoes(
+                processo,
+                copiaTrabalho.getNomeArquivo(),
+                caminhoCopia);
+
+        // quarentena é EM_VALIDACAO no banco (V1: aguardando o auditor), igual a Tarefa 12.
+        // FALHOU fica só pra erro técnico; e é o EM_VALIDACAO que faz a V14/V21 travar a carga
+        if (!valido) {
+            processoEstadoService.atualizarEstado(
+                    processo,
+                    "VALIDACAO",
+                    "EM_VALIDACAO",
+                    "Inconsistências encontradas. O processo foi movido para a quarentena.");
+
+            auditoriaLogService.registrarLog(
+                    processo,
+                    "WARNING",
+                    "Inconsistências encontradas. O processo foi movido para a QUARENTENA.");
+
+            return salvarGarantindoCampos(processo);
+        }
+
+        // as contas já rodaram no Tratamento (Tarefa 11), aqui só registra a etapa como feita
+        // em vez de marcar EM_ANDAMENTO e CONCLUIDA no mesmo instante
+        processoEstadoService.atualizarEstado(
+                processo,
+                "CALCULO_ANALITICO",
+                "CONCLUIDA",
+                "Validação concluída. Cálculo analítico (áreas e cruzamentos) já gerado no Tratamento: "
+                        + calculo.poligonosCalculados() + " polígonos, "
+                        + calculo.areaTotalHectares().toPlainString() + " ha. Processo finalizado com sucesso.");
 
         auditoriaLogService.registrarLog(
                 processo,
-                "ERROR",
-                "Inconsistências encontradas. O processo foi movido para a QUARENTENA.");
+                "INFO",
+                "Fluxo concluído com sucesso.");
 
         return salvarGarantindoCampos(processo);
     }
-
-    processoEstadoService.atualizarEstado(
-            processo,
-            "CALCULO_ANALITICO",
-            "EM_ANDAMENTO",
-            "Validação concluída. Iniciando cálculo analítico.");
-
-    processoEstadoService.atualizarEstado(
-            processo,
-            "CALCULO_ANALITICO",
-            "CONCLUIDA",
-            "Cálculo analítico concluído. Processo finalizado com sucesso.");
-
-    auditoriaLogService.registrarLog(
-            processo,
-            "INFO",
-            "Fluxo concluído com sucesso.");
-
-    return salvarGarantindoCampos(processo);
-}
 
 
     // Tarefa 12: para o Tratamento na hora e deixa a carga parada em
@@ -496,19 +493,19 @@ public class ProcessoService {
 
         try {
             Path pastaProcessada = Path.of("zona_processada_storage");
-            if (!java.nio.file.Files.exists(pastaProcessada)) {
-                java.nio.file.Files.createDirectories(pastaProcessada);
+            if (!Files.exists(pastaProcessada)) {
+                Files.createDirectories(pastaProcessada);
             }
 
             String extensao = formato != null && formato.equalsIgnoreCase("csv") ? "csv" : "geojson";
             String nomeArquivo = id + "_exportado." + extensao;
             Path caminhoArquivo = pastaProcessada.resolve(nomeArquivo);
 
-            if (!java.nio.file.Files.exists(caminhoArquivo)) {
+            if (!Files.exists(caminhoArquivo)) {
                 String conteudo = extensao.equals("csv")
                     ? "id,situacao_atual_id,data_criacao\n" + processo.getId() + "," + processo.getSituacaoAtualId() + "," + processo.getDataCriacao()
                     : "{\"type\": \"FeatureCollection\", \"features\": []}";
-                java.nio.file.Files.writeString(caminhoArquivo, conteudo);
+                Files.writeString(caminhoArquivo, conteudo);
             }
 
             Resource recurso = new UrlResource(caminhoArquivo.toUri());

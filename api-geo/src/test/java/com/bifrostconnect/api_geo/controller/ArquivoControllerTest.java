@@ -13,12 +13,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -449,5 +451,95 @@ class ArquivoControllerTest {
         mockMvc.perform(get("/api/cargas/{id}/calculos", 999999L))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.erro").exists());
+    }
+
+    @Test
+    @DisplayName("Tarefa 14: POST /api/analise/cruzamento lista as propriedades e hectares afetados das bases publicadas")
+    void deveCruzarBasesPublicadas() throws Exception {
+        // mesmo cenário da Tarefa 13: o embargo pega só um pedaço do CAR-A
+        Path arquivo = Files.createTempFile("cruzamento_analise", ".geojson");
+        Path copia = null;
+
+        jdbcTemplate.update("""
+            INSERT INTO camada_referencia (fonte, nome_camada, identificador_origem, geom)
+            VALUES ('IBAMA_EMBARGO', 'Embargo teste T14', 'EMB-T14',
+                    ST_GeomFromText('POLYGON((-46.6335 -23.551, -46.6335 -23.552, -46.6325 -23.552,
+                                              -46.6325 -23.551, -46.6335 -23.551))', 4674))
+            """);
+
+        try {
+            Files.writeString(arquivo, """
+                {"type":"FeatureCollection","features":[
+                 {"type":"Feature","properties":{"cod_imovel":"CAR-A"},
+                  "geometry":{"type":"Polygon","coordinates":[[[-46.634,-23.551],[-46.634,-23.552],
+                  [-46.633,-23.552],[-46.633,-23.551],[-46.634,-23.551]]]}},
+                 {"type":"Feature","properties":{"cod_imovel":"CAR-B"},
+                  "geometry":{"type":"Polygon","coordinates":[[[-46.632,-23.551],[-46.632,-23.552],
+                  [-46.631,-23.552],[-46.631,-23.551],[-46.632,-23.551]]]}}]}
+                """);
+
+            String hashOriginal = (java.util.UUID.randomUUID().toString() + java.util.UUID.randomUUID())
+                    .replace("-", "").substring(0, 64);
+            jdbcTemplate.update("""
+                INSERT INTO arquivo_original
+                    (processo_id, usuario_upload_id, nome_original, extensao, tipo_mime,
+                     tamanho_bytes, url_armazenamento, hash_sha256)
+                VALUES (?, 1, 'cruzamento_analise.geojson', 'geojson', 'application/json', ?, ?, ?)
+                """, processoId, Files.size(arquivo), arquivo.toString(), hashOriginal);
+
+            Processo processo = processoRepository.findById(processoId).orElseThrow();
+            processoService.processarArquivo(processo, "cruzamento_analise.geojson", arquivo, 1L);
+
+            copia = Path.of(jdbcTemplate.queryForObject(
+                    "SELECT url_armazenamento FROM arquivo_processado WHERE processo_id = ?", String.class, processoId));
+
+            // antes de publicar a carga não pode entrar no cruzamento
+            mockMvc.perform(post("/api/analise/cruzamento")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"processoIds\":[" + processoId + "]}"))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.erro").exists());
+
+            // publica do jeito que a V22 exige: aprovação do gestor na PUBLICACAO e depois fecha a versão
+            jdbcTemplate.update("""
+                INSERT INTO historico_aprovacoes_gestor (processo_id, gestor_id, etapa_avaliada, decisao)
+                VALUES (?, 1, 'PUBLICACAO', 'APROVADO')
+                """, processoId);
+            jdbcTemplate.update("""
+                UPDATE processo SET versao_oficial = '1.0', versao_fechada = TRUE,
+                       data_publicacao = now(), gestor_publicacao_id = 1
+                 WHERE id = ?
+                """, processoId);
+
+            mockMvc.perform(post("/api/analise/cruzamento")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"processoIds\":[" + processoId + "],\"categorias\":[\"ALERTA\"]}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.basesCruzadas").value(1))
+                    .andExpect(jsonPath("$.propriedadesAfetadas").value(1))
+                    .andExpect(jsonPath("$.hectaresAfetados").isNumber())
+                    .andExpect(jsonPath("$.propriedades[0].processoId").value(processoId))
+                    .andExpect(jsonPath("$.propriedades[0].versaoOficial").value("1.0"))
+                    .andExpect(jsonPath("$.propriedades[0].codigoImovel").value("CAR-A"))
+                    .andExpect(jsonPath("$.propriedades[0].areaImovelHectares").isNumber())
+                    .andExpect(jsonPath("$.propriedades[0].sobreposicoes[0].fonteCamada").value("IBAMA_EMBARGO"))
+                    .andExpect(jsonPath("$.propriedades[0].sobreposicoes[0].codigoAlerta").value("EMB-T14"))
+                    .andExpect(jsonPath("$.totaisPorCategoria.ALERTA.quantidade").value(1));
+
+            // só APP: o embargo fica de fora e ninguém aparece afetado
+            mockMvc.perform(post("/api/analise/cruzamento")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"processoIds\":[" + processoId + "],\"categorias\":[\"APP\"]}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.basesCruzadas").value(1))
+                    .andExpect(jsonPath("$.propriedadesAfetadas").value(0));
+
+        } finally {
+            jdbcTemplate.update("DELETE FROM camada_referencia WHERE identificador_origem = 'EMB-T14'");
+            Files.deleteIfExists(arquivo);
+            if (copia != null) {
+                Files.deleteIfExists(copia);
+            }
+        }
     }
 }

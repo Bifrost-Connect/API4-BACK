@@ -19,7 +19,7 @@ public class GeoJsonEpsgService {
 
     public static final String EPSG_PADRAO_SEM_CRS = "4326";
 
-    
+
     private static final Pattern EPSG_PATTERN = Pattern.compile(
             "(?i)EPSG(?::|%3A|/)+(?:[0-9]+(?:\\.[0-9]+)*(?::|%3A|/)+)?([0-9]{4,6})(?![0-9])");
 
@@ -86,7 +86,7 @@ public class GeoJsonEpsgService {
         return nome;
     }
 
-    /** Retorna o código EPSG (so os números) ou null se não for possível interpretar. */
+    // devolve só os números do código EPSG, ou null se não der pra interpretar
     static String interpretarCrs(String nome) {
         if (nome == null || nome.isBlank()) {
             return null;

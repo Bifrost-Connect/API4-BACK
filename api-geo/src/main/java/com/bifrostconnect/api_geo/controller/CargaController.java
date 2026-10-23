@@ -53,7 +53,7 @@ public class CargaController {
         this.calculoAnaliticoService = calculoAnaliticoService;
     }
 
-    
+
     @GetMapping("/{id}/calculos")
     public ResponseEntity<?> consultarCalculos(@PathVariable Long id) {
         try {

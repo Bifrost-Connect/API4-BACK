@@ -104,7 +104,7 @@ public class FeicaoCargaService {
         return new ResultadoCarga(total, carregadas, rejeitadas);
     }
 
-    
+
     static String verificarGeometria(JsonNode geometria) {
         if (geometria == null || !geometria.isObject()) {
             return "Feição sem geometria.";

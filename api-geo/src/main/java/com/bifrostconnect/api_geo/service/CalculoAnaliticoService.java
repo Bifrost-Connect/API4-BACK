@@ -3,6 +3,7 @@ package com.bifrostconnect.api_geo.service;
 import java.math.BigDecimal;
 import java.sql.Savepoint;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -77,15 +78,12 @@ public class CalculoAnaliticoService {
              WHERE p.id = ?
             """;
 
-    // a cópia de trabalho do Tratamento é a que tem feições extraídas; pega a mais nova
-    // (a carga pode ter sido reenviada e ganhado outra cópia)
+    // a carga pode ter mais de uma cópia; qual vale é decidido pela vw_copia_vigente (V26),
+    // a mesma regra do mapa e da Tarefa 14
     private static final String SQL_ULTIMA_COPIA = """
-            SELECT ap.id
-              FROM arquivo_processado ap
-             WHERE ap.processo_id = ?
-               AND EXISTS (SELECT 1 FROM feicao_carga fc WHERE fc.arquivo_processado_id = ap.id)
-             ORDER BY ap.id DESC
-             LIMIT 1
+            SELECT cv.arquivo_processado_id AS id
+              FROM vw_copia_vigente cv
+             WHERE cv.processo_id = ?
             """;
 
     private static final String SQL_CRUZAMENTOS_GRAVADOS = """
@@ -118,6 +116,19 @@ public class CalculoAnaliticoService {
                 categoriaPorFonte.putIfAbsent(limpa, categoria);
             }
         }
+    }
+
+    // a categoria pode vir null se a fonte saiu do application.properties depois do cálculo
+    public Categoria categoriaDaFonte(String fonte) {
+        return categoriaPorFonte.get(fonte);
+    }
+
+    // Tarefa 14: fontes configuradas das categorias pedidas (vazio = todas)
+    public List<String> fontesDasCategorias(Collection<Categoria> categorias) {
+        return categoriaPorFonte.entrySet().stream()
+                .filter(e -> categorias.isEmpty() || categorias.contains(e.getValue()))
+                .map(Map.Entry::getKey)
+                .toList();
     }
 
     private record Area(String codigoImovel, BigDecimal hectares) {}
