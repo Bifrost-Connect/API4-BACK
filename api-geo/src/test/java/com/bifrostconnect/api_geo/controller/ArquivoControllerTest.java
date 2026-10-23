@@ -394,7 +394,7 @@ class ArquivoControllerTest {
             Long arquivoProcessadoId = jdbcTemplate.queryForObject(
                     "SELECT id FROM arquivo_processado WHERE processo_id = ?", Long.class, processoId);
 
-            mockMvc.perform(get("/api/cargas/{id}/calculos", processoId))
+            mockMvc.perform(get("/api/carga/{id}/calculos", processoId))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.processoId").value(processoId))
                     .andExpect(jsonPath("$.arquivoProcessadoId").value(arquivoProcessadoId))
@@ -422,7 +422,7 @@ class ArquivoControllerTest {
     @Test
     @DisplayName("Tarefa 13: carga inexistente => 404 com mensagem de erro")
     void deveDar404AoConsultarCalculosDeCargaInexistente() throws Exception {
-        mockMvc.perform(get("/api/cargas/{id}/calculos", 999999L))
+        mockMvc.perform(get("/api/carga/{id}/calculos", 999999L))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.erro").exists());
     }

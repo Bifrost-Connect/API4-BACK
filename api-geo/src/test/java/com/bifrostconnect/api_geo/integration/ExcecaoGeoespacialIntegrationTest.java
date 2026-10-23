@@ -124,7 +124,7 @@ class ExcecaoGeoespacialIntegrationTest {
                 .andExpect(status().isUnprocessableEntity());
 
         // mesma carga, logo depois: a API segue de pé e a consulta funciona
-        mockMvc.perform(get("/cargas/{id}/calculos", processoId))
+        mockMvc.perform(get("/carga/{id}/calculos", processoId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.situacao").value("EM_VALIDACAO"));
 

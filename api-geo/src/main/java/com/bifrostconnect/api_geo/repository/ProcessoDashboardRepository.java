@@ -131,7 +131,13 @@ public class ProcessoDashboardRepository {
                     p.ano_safra AS year,
                     p.epsg_origem AS epsg,
                     a.hash_sha256 AS integrityHash,
-                    a.url_armazenamento AS originalFileUrl
+                    a.url_armazenamento AS originalFileUrl,
+                    p.competencia,
+                    p.formato,
+                    p.classificacao_acesso,
+                    p.cobertura_espacial,
+                    p.cobertura_temporal_inicio,
+                    p.cobertura_temporal_fim
                 FROM processo p
                 LEFT JOIN etapa e
                     ON e.id = p.etapa_atual_id
@@ -232,6 +238,12 @@ public class ProcessoDashboardRepository {
                                 ? resultado[10].toString()
                                 : null
                 )
+                .competencia(resultado[11] != null ? resultado[11].toString() : null)
+                .formato(resultado[12] != null ? resultado[12].toString() : null)
+                .classificacaoAcesso(resultado[13] != null ? resultado[13].toString() : null)
+                .coberturaEspacial(resultado[14] != null ? resultado[14].toString() : null)
+                .coberturaTemporalInicio(resultado[15] != null ? resultado[15].toString() : null)
+                .coberturaTemporalFim(resultado[16] != null ? resultado[16].toString() : null)
                 .description(
                         "Detalhes carregados com sucesso"
                 )

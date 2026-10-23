@@ -42,7 +42,7 @@ import com.bifrostconnect.api_geo.service.ExportacaoRejeicoesService;
 import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping({"/carga", "/api/carga", "/cargas", "/api/cargas"})
+@RequestMapping("/carga")
 public class CargaController {
 
     private final MetadadosCargaService metadadosCargaService;
@@ -287,7 +287,7 @@ public class CargaController {
     // Tarefa 18: API de Reprocessamento de Carga
     // ==========================================
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
-    @PostMapping({ "/{id}/reprocessar", "/cargas/{id}/reprocessar" })
+    @PostMapping("/{id}/reprocessar")
     public ResponseEntity<?> reprocessarCarga(
             @PathVariable Long id,
             @RequestParam("file") MultipartFile file,
@@ -314,7 +314,7 @@ public class CargaController {
     // Tarefa 19: API de Cancelamento/Invalidação
     // ==========================================
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
-    @PatchMapping({ "/{id}/cancelar", "/cargas/{id}/cancelar" })
+    @PatchMapping("/{id}/cancelar")
     public ResponseEntity<Void> cancelarCarga(
             @PathVariable Long id,
             @Valid @RequestBody CancelamentoRequest request,

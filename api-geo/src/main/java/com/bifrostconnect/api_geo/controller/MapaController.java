@@ -1,15 +1,11 @@
 package com.bifrostconnect.api_geo.controller;
 
-import com.bifrostconnect.api_geo.dto.AprovacaoTratamentoRequest;
 import com.bifrostconnect.api_geo.dto.FeicaoDetalheResponseDTO;
 import com.bifrostconnect.api_geo.entity.CamadaReferencia;
 import com.bifrostconnect.api_geo.repository.CamadaReferenciaRepository;
 import com.bifrostconnect.api_geo.service.CamadasMapaService;
-import com.bifrostconnect.api_geo.service.ConsolidacaoPublicacaoService;
 import com.bifrostconnect.api_geo.service.MapaService;
-import com.bifrostconnect.api_geo.service.RevisaoPublicacaoService;
 
-import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,33 +16,27 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/mapa")
 public class MapaController {
 
     private final MapaService mapaService;
     private final CamadaReferenciaRepository camadaReferenciaRepository;
-    private final RevisaoPublicacaoService revisaoPublicacaoService;
     private final CamadasMapaService camadasMapaService;
-    private final ConsolidacaoPublicacaoService consolidacaoPublicacaoService;
 
     public MapaController(
             MapaService mapaService,
             CamadaReferenciaRepository camadaReferenciaRepository,
-            RevisaoPublicacaoService revisaoPublicacaoService,
-            CamadasMapaService camadasMapaService,
-            ConsolidacaoPublicacaoService consolidacaoPublicacaoService) {
+            CamadasMapaService camadasMapaService) {
 
         this.mapaService = mapaService;
         this.camadaReferenciaRepository = camadaReferenciaRepository;
-        this.revisaoPublicacaoService = revisaoPublicacaoService;
         this.camadasMapaService = camadasMapaService;
-        this.consolidacaoPublicacaoService = consolidacaoPublicacaoService;
     }
 
     /**
      * Tarefa 16: detalhes de uma feição selecionada no mapa.
      */
-    @GetMapping("/mapa/feicoes/{id_poligono}")
+    @GetMapping("/feicoes/{id_poligono}")
     public ResponseEntity<FeicaoDetalheResponseDTO> buscarDetalhesFeicao(
             @PathVariable("id_poligono") Long idPoligono) {
 
@@ -59,7 +49,7 @@ public class MapaController {
     /**
      * Tarefas 15 e 17: rota legada com blindagem e limite de payload.
      */
-    @GetMapping("/mapa/camadas-legado")
+    @GetMapping("/camadas-legado")
     public ResponseEntity<List<CamadaReferencia>> listarCamadasAnalista(
             @RequestParam(required = false) String conjunto,
             @RequestParam(required = false) Integer ano) {
@@ -92,46 +82,14 @@ public class MapaController {
     }
 
     /**
-     * Tarefa 12: aprovação do tratamento e consolidação para publicação.
-     */
-    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR')")
-    @PostMapping("/publicacao/{id_carga}/aprovar-tratamento")
-    public ResponseEntity<Map<String, Object>> aprovarTratamento(
-            @PathVariable("id_carga") Long idCarga,
-            @Valid @RequestBody AprovacaoTratamentoRequest request) {
-
-        Map<String, Object> resultado =
-                consolidacaoPublicacaoService.aprovarTratamento(
-                        idCarga,
-                        request.getGestorId(),
-                        request.getParecer());
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(resultado);
-    }
-
-    /**
-     * Tarefa 13: dados para revisão de publicação.
-     */
-    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
-    @GetMapping("/publicacao/{id_carga}/revisao")
-    public ResponseEntity<Map<String, Object>> obterRevisaoPublicacao(
-            @PathVariable("id_carga") Long idCarga) {
-
-        Map<String, Object> resultado =
-                revisaoPublicacaoService.obterDadosRevisao(idCarga);
-
-        return ResponseEntity.ok(resultado);
-    }
-
-    /**
-     * Tarefa 6: catálogo de camadas com paginação e filtros de busca.
+     * Tarefa 6 / Tarefa 14: catálogo de camadas com paginação e filtros de busca.
      *
      * page: número da página, começando em zero.
      * size: quantidade de feições por página.
      * conjuntoId, anoSafra, bbox e busca: filtros opcionais.
      */
     @PreAuthorize("hasAnyRole('ANALISTA', 'AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
-    @GetMapping("/mapa/camadas")
+    @GetMapping({"/camadas", "/camadas-geojson"})
     public ResponseEntity<Map<String, Object>> listarCamadasMapaGeoJson(
             @RequestParam(required = false) Long conjuntoId,
             @RequestParam(required = false) String anoSafra,

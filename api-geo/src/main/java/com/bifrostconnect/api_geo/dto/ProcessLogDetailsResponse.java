@@ -24,6 +24,14 @@ public class ProcessLogDetailsResponse {
     private List<List<Double>> mapCoordinates;
     private Map<String, List<String>> logs;
     private String pauseReason;
+
+    // Metadados expandidos (US05)
+    private String competencia;
+    private String formato;
+    private String classificacaoAcesso;
+    private String coberturaEspacial;
+    private String coberturaTemporalInicio;
+    private String coberturaTemporalFim;
     
     // As in mock, these can be empty lists initially
     private List<Object> validationChecks;
