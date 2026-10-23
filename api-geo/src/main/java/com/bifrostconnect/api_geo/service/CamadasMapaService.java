@@ -33,7 +33,13 @@ public class CamadasMapaService {
             FROM feicao_carga fc
             JOIN arquivo_processado ap ON fc.arquivo_processado_id = ap.id
             JOIN processo p ON ap.processo_id = p.id
-            WHERE 1=1
+            JOIN etapa e ON e.id = p.etapa_atual_id
+            JOIN situacao s ON s.id = p.situacao_atual_id
+            -- Tarefa 15: trava de blindagem. Só sai carga publicada e com versão fechada,
+            -- nada de Tratamento, quarentena ou pendente de aprovação do gestor
+            WHERE e.nome = 'PUBLICACAO'
+              AND s.nome = 'CONCLUIDA'
+              AND p.versao_fechada = TRUE
             """);
 
         List<Object> params = new ArrayList<>();

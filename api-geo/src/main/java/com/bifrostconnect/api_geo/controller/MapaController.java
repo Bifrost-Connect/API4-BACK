@@ -1,12 +1,15 @@
 package com.bifrostconnect.api_geo.controller;
 
+import com.bifrostconnect.api_geo.dto.AprovacaoTratamentoRequest;
 import com.bifrostconnect.api_geo.dto.FeicaoDetalheResponseDTO;
 import com.bifrostconnect.api_geo.entity.CamadaReferencia;
 import com.bifrostconnect.api_geo.repository.CamadaReferenciaRepository;
 import com.bifrostconnect.api_geo.service.CamadasMapaService;
+import com.bifrostconnect.api_geo.service.ConsolidacaoPublicacaoService;
 import com.bifrostconnect.api_geo.service.MapaService;
 import com.bifrostconnect.api_geo.service.RevisaoPublicacaoService;
 
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,16 +27,19 @@ public class MapaController {
     private final CamadaReferenciaRepository camadaReferenciaRepository;
     private final RevisaoPublicacaoService revisaoPublicacaoService; // Adicionado para Tarefa 13
     private final CamadasMapaService camadasMapaService;               // Adicionado para Tarefa 14
+    private final ConsolidacaoPublicacaoService consolidacaoPublicacaoService; // Tarefa 12
 
     public MapaController(
             MapaService mapaService, 
             CamadaReferenciaRepository camadaReferenciaRepository,
             RevisaoPublicacaoService revisaoPublicacaoService,
-            CamadasMapaService camadasMapaService) {
+            CamadasMapaService camadasMapaService,
+            ConsolidacaoPublicacaoService consolidacaoPublicacaoService) {
         this.mapaService = mapaService;
         this.camadaReferenciaRepository = camadaReferenciaRepository;
         this.revisaoPublicacaoService = revisaoPublicacaoService;
         this.camadasMapaService = camadasMapaService;
+        this.consolidacaoPublicacaoService = consolidacaoPublicacaoService;
     }
 
     /**
@@ -78,6 +84,19 @@ public class MapaController {
     }
 
     // ==========================================
+    // US08 - Tarefa 12: gestor aprova o Tratamento e o pacote de Publicação é montado na hora
+    // ==========================================
+    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR')")
+    @PostMapping("/publicacao/{id_carga}/aprovar-tratamento")
+    public ResponseEntity<Map<String, Object>> aprovarTratamento(
+            @PathVariable("id_carga") Long idCarga,
+            @Valid @RequestBody AprovacaoTratamentoRequest request) {
+        Map<String, Object> resultado = consolidacaoPublicacaoService
+                .aprovarTratamento(idCarga, request.getGestorId(), request.getParecer());
+        return ResponseEntity.status(HttpStatus.CREATED).body(resultado);
+    }
+
+    // ==========================================
     // US08 - Tarefa 13: API de Mapa e Histórico para Revisão de Publicação
     // ==========================================
     @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
@@ -90,7 +109,8 @@ public class MapaController {
     // ==========================================
     // US08 - Tarefa 14: API de Camadas Publicadas para o Mapa (GeoJSON com Bounding Box e Filtros)
     // ==========================================
-    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
+    // ANALISTA entra aqui porque essa é a rota do mapa dele (a trava da Tarefa 15 fica no service)
+    @PreAuthorize("hasAnyRole('ANALISTA', 'AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
     @GetMapping("/mapa/camadas")
     public ResponseEntity<Map<String, Object>> listarCamadasMapaGeoJson(
             @RequestParam(required = false) Long conjuntoId,
