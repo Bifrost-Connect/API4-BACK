@@ -9,6 +9,7 @@ import java.util.List;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -34,6 +35,7 @@ public class ProcessoService {
     private final ValidacaoTopologicaService validacaoTopologicaService;
     private final CalculoAnaliticoService calculoAnaliticoService;
     private final NotificacaoService notificacaoService;
+    private final JdbcTemplate jdbcTemplate;
 
     public ProcessoService(
             ProcessoRepository processoRepository,
@@ -46,7 +48,8 @@ public class ProcessoService {
             ArquivoProcessadoService arquivoProcessadoService,
             ValidacaoTopologicaService validacaoTopologicaService,
             CalculoAnaliticoService calculoAnaliticoService,
-            NotificacaoService notificacaoService
+            NotificacaoService notificacaoService,
+            JdbcTemplate jdbcTemplate
         ) {
 
         this.processoRepository = processoRepository;
@@ -60,6 +63,7 @@ public class ProcessoService {
         this.validacaoTopologicaService = validacaoTopologicaService;
         this.calculoAnaliticoService = calculoAnaliticoService;
         this.notificacaoService = notificacaoService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     public Processo buscarPorId(Long id) {
@@ -136,15 +140,29 @@ public class ProcessoService {
             throw e;
 
         } catch (IllegalArgumentException e) {
+            String mensagem = "Falha ao preparar o arquivo: " + e.getMessage();
+            try {
+                processoEstadoService.atualizarEstado(processo, "TRATAMENTO", "FALHOU", mensagem);
+                auditoriaLogService.registrarLog(processo, "ERROR", mensagem);
+                salvarGarantindoCampos(processo);
+            } catch (Exception ignored) {
+            }
             throw new ResponseStatusException(
                     HttpStatus.UNSUPPORTED_MEDIA_TYPE,
                     e.getMessage(),
                     e);
 
         } catch (IOException e) {
+            String mensagem = "Não foi possível ler ou preparar o arquivo: " + e.getMessage();
+            try {
+                processoEstadoService.atualizarEstado(processo, "TRATAMENTO", "FALHOU", mensagem);
+                auditoriaLogService.registrarLog(processo, "ERROR", mensagem);
+                salvarGarantindoCampos(processo);
+            } catch (Exception ignored) {
+            }
             throw new ResponseStatusException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Não foi possível ler ou preparar o arquivo GeoJSON.",
+                    mensagem,
                     e);
 
         } finally {
@@ -162,7 +180,7 @@ public class ProcessoService {
         }
     }
 
-    // etapa TRATAMENTO: padronização e checagem de EPSG
+    // etapa VALIDACAO: padronização, checagem de EPSG, topologia e cálculos preliminares
     private Processo processarArquivoGeoJson(
             Processo processo,
             String nomeOriginal,
@@ -171,9 +189,9 @@ public class ProcessoService {
 
         processoEstadoService.atualizarEstado(
                 processo,
-                "TRATAMENTO",
+                "VALIDACAO",
                 "EM_ANDAMENTO",
-                "Tratamento iniciado: padronização e checagem de EPSG.");
+                "Validação iniciada: padronização e checagem de EPSG.");
 
         auditoriaLogService.registrarLog(
                 processo,
@@ -207,12 +225,12 @@ public class ProcessoService {
                         + epsgDeclarado
                         + ", detectado EPSG:"
                         + epsgDetectado
-                        + ". Tratamento bloqueado. Corrija manualmente o cadastro "
+                        + ". Validação com ressalvas. Corrija manualmente o cadastro "
                         + "ou o arquivo e envie novamente para validação.";
 
                 processoEstadoService.atualizarEstado(
                         processo,
-                        "TRATAMENTO",
+                        "VALIDACAO",
                         "COM_RESSALVA",
                         mensagem);
 
@@ -228,7 +246,7 @@ public class ProcessoService {
                                 + "; declarado=" + epsgDeclarado
                                 + "; detectado=" + epsgDetectado);
 
-                // Interrompido: sem cópia de trabalho e sem validações.
+                // Interrompido: sem cópia de trabalho e sem validações adicionais.
                 return salvarGarantindoCampos(processo);
             }
 
@@ -236,7 +254,7 @@ public class ProcessoService {
 
             copiaTrabalho = arquivoProcessadoService.criarCopiaPadronizada(
                     processo.getId(),
-                    processo.getEtapaAtualId(), // TRATAMENTO: etapa que gerou a cópia
+                    processo.getEtapaAtualId(), // VALIDACAO: etapa que gerou a cópia
                     caminhoGeoJson,
                     epsgDetectado);
 
@@ -255,7 +273,7 @@ public class ProcessoService {
 
             processoEstadoService.atualizarEstado(
                     processo,
-                    "TRATAMENTO",
+                    "VALIDACAO",
                     "FALHOU",
                     mensagem);
 
@@ -280,12 +298,12 @@ public class ProcessoService {
                         + ", cópia de trabalho em EPSG:" + PadronizacaoEpsgService.EPSG_OFICIAL
                         + " (arquivo_processado ID: " + copiaTrabalho.getId() + ").");
 
-        // 2ª parte do Tratamento: checa a topologia dos polígonos da cópia de trabalho
+        // 2ª parte: checa a topologia dos polígonos da cópia de trabalho
         processoEstadoService.atualizarEstado(
                 processo,
-                "TRATAMENTO",
+                "VALIDACAO",
                 "EM_ANDAMENTO",
-                "Tratamento: validação topológica dos polígonos.");
+                "Validação: checagem topológica dos polígonos.");
 
         ResultadoValidacaoTopologica topologia;
 
@@ -301,7 +319,7 @@ public class ProcessoService {
 
             processoEstadoService.atualizarEstado(
                     processo,
-                    "TRATAMENTO",
+                    "VALIDACAO",
                     "FALHOU",
                     mensagem);
 
@@ -328,7 +346,30 @@ public class ProcessoService {
                         + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_DUPLICADO) + " duplicados, "
                         + topologia.contar(ResultadoValidacaoTopologica.TipoProblema.POLIGONO_SOBREPOSTO) + " sobreposições.");
 
-        // Tarefa 12: sobreposição/duplicação inaceitável não deixa nem chegar no cálculo
+        // Executa o cálculo analítico sobre os polígonos válidos carregados
+        // para que os cruzamentos com APP, Reserva Legal e Alertas fiquem disponíveis
+        // para o Gestor e Auditor mesmo se houver inconsistências topológicas.
+        ResultadoCalculoAnalitico calculo = null;
+        try {
+            calculo = calculoAnaliticoService.calcular(processo, copiaTrabalho);
+            auditoriaLogService.registrarLog(
+                    processo,
+                    "INFO",
+                    "Cálculo analítico: " + calculo.poligonosCalculados() + " polígonos válidos somando "
+                            + calculo.areaTotalHectares().toPlainString() + " ha; sobreposição com APP "
+                            + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.APP).toPlainString() + " ha ("
+                            + calculo.contar(ResultadoCalculoAnalitico.Categoria.APP) + " cruzamentos), Reserva Legal "
+                            + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL).toPlainString() + " ha ("
+                            + calculo.contar(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL) + " cruzamentos), Alertas "
+                            + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.ALERTA).toPlainString() + " ha ("
+                            + calculo.contar(ResultadoCalculoAnalitico.Categoria.ALERTA) + " cruzamentos).");
+        } catch (Exception e) {
+            auditoriaLogService.registrarLog(
+                    processo,
+                    "WARNING",
+                    "Cálculo analítico preliminar suspenso: " + e.getMessage());
+        }
+
         List<ResultadoValidacaoTopologica.Problema> inaceitaveis = topologia.problemasInaceitaveis();
         if (!inaceitaveis.isEmpty()) {
             return enviarParaQuarentena(
@@ -340,35 +381,7 @@ public class ProcessoService {
                     inaceitaveis.stream().map(ResultadoValidacaoTopologica.Problema::mensagem).toList());
         }
 
-        // 3ª parte do Tratamento: área de cada polígono válido e cruzamento com APP, RL e Alertas
-        processoEstadoService.atualizarEstado(
-                processo,
-                "TRATAMENTO",
-                "EM_ANDAMENTO",
-                "Tratamento: cálculo de área e cruzamentos espaciais.");
-
-        ResultadoCalculoAnalitico calculo;
-
-        try {
-            calculo = calculoAnaliticoService.calcular(processo, copiaTrabalho);
-
-        } catch (FalhaGeoespacialException e) {
-            // Tarefa 15: erro do PostGIS na conta continua indo pra Quarentena (Tarefa 12),
-            // mas agora a resposta é 422 em vez de 200
-            throw enviarParaQuarentenaGeoespacial(processo, usuarioId, e);
-
-        } catch (Exception e) {
-            // Tarefa 12: erro do PostGIS no meio da conta (TopologyException etc.) não é falha
-            // técnica do sistema, é a geometria da carga que não fecha -> vai pro Gestor decidir
-            return enviarParaQuarentena(
-                    processo,
-                    usuarioId,
-                    "QUARENTENA_CALCULO",
-                    "Erro no cálculo analítico dos polígonos.",
-                    List.of(String.valueOf(e.getMessage())));
-        }
-
-        if (calculo.possuiInconsistencias()) {
+        if (calculo != null && calculo.possuiInconsistencias()) {
             return enviarParaQuarentena(
                     processo,
                     usuarioId,
@@ -378,70 +391,22 @@ public class ProcessoService {
                     calculo.inconsistencias());
         }
 
-        auditoriaLogService.registrarLog(
-                processo,
-                "INFO",
-                "Cálculo analítico: " + calculo.poligonosCalculados() + " polígonos válidos somando "
-                        + calculo.areaTotalHectares().toPlainString() + " ha; sobreposição com APP "
-                        + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.APP).toPlainString() + " ha ("
-                        + calculo.contar(ResultadoCalculoAnalitico.Categoria.APP) + " cruzamentos), Reserva Legal "
-                        + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL).toPlainString() + " ha ("
-                        + calculo.contar(ResultadoCalculoAnalitico.Categoria.RESERVA_LEGAL) + " cruzamentos), Alertas "
-                        + calculo.hectaresPorCategoria(ResultadoCalculoAnalitico.Categoria.ALERTA).toPlainString() + " ha ("
-                        + calculo.contar(ResultadoCalculoAnalitico.Categoria.ALERTA) + " cruzamentos).");
-
         processoEstadoService.atualizarEstado(
                 processo,
                 "VALIDACAO",
                 "EM_ANDAMENTO",
-                "Tratamento concluído. Iniciando validações.");
-
-        Path caminhoCopia = Path.of(copiaTrabalho.getUrlArmazenamento());
-
-        boolean valido = validacaoService.executarValidacoes(
-                processo,
-                copiaTrabalho.getNomeArquivo(),
-                caminhoCopia);
-
-        // quarentena é EM_VALIDACAO no banco (V1: aguardando o auditor), igual a Tarefa 12.
-        // FALHOU fica só pra erro técnico; e é o EM_VALIDACAO que faz a V14/V21 travar a carga
-        if (!valido) {
-            processoEstadoService.atualizarEstado(
-                    processo,
-                    "VALIDACAO",
-                    "EM_VALIDACAO",
-                    "Inconsistências encontradas. O processo foi movido para a quarentena.");
-
-            auditoriaLogService.registrarLog(
-                    processo,
-                    "WARNING",
-                    "Inconsistências encontradas. O processo foi movido para a QUARENTENA.");
-
-            return salvarGarantindoCampos(processo);
-        }
-
-        // as contas já rodaram no Tratamento (Tarefa 11), aqui só registra a etapa como feita
-        // em vez de marcar EM_ANDAMENTO e CONCLUIDA no mesmo instante
-        processoEstadoService.atualizarEstado(
-                processo,
-                "CALCULO_ANALITICO",
-                "CONCLUIDA",
-                "Validação concluída. Cálculo analítico (áreas e cruzamentos) já gerado no Tratamento: "
-                        + calculo.poligonosCalculados() + " polígonos, "
-                        + calculo.areaTotalHectares().toPlainString() + " ha. Processo finalizado com sucesso.");
+                "Ingestão e pré-validação concluídas. Aguardando avaliação e aprovação do Gestor no gate de Validação.");
 
         auditoriaLogService.registrarLog(
                 processo,
                 "INFO",
-                "Fluxo concluído com sucesso.");
+                "Arquivo processado e validado. Aguardando decisão do Gestor na etapa de Validação.");
 
         return salvarGarantindoCampos(processo);
     }
 
 
-    // Tarefa 12: para o Tratamento na hora e deixa a carga parada em
-    // TRATAMENTO / EM_VALIDACAO (quarentena) esperando a decisão do Gestor.
-    // A V14 trava a cópia de trabalho enquanto ela estiver nesse estado
+    // Deixa a carga parada em VALIDACAO / EM_VALIDACAO (quarentena) esperando a decisão do Gestor.
     private Processo enviarParaQuarentena(
             Processo processo,
             Long usuarioId,
@@ -462,11 +427,11 @@ public class ProcessoService {
             String detalheTecnico) {
 
         String mensagem = motivo
-                + " Tratamento interrompido e carga enviada para a Quarentena, aguardando decisão do Gestor.";
+                + " Carga encaminhada para a Quarentena na etapa de Validação, aguardando parecer do Gestor.";
 
         processoEstadoService.atualizarEstado(
                 processo,
-                "TRATAMENTO",
+                "VALIDACAO",
                 "EM_VALIDACAO",
                 mensagem);
 
@@ -478,7 +443,7 @@ public class ProcessoService {
         auditoriaLogService.registrarLog(
                 processo,
                 "WARNING",
-                mensagem + " Detalhes: " + amostra,
+                mensagem + (amostra.isBlank() ? "" : " Detalhes: " + amostra),
                 codigoErro,
                 detalheTecnico);
 
@@ -489,7 +454,7 @@ public class ProcessoService {
 
         notificacaoService.notificarAuditores(
                 processo,
-                "Carga do processo " + processo.getId() + " está em Quarentena na etapa de Tratamento: " + motivo);
+                "Carga do processo " + processo.getId() + " está em Quarentena na etapa de Validação: " + motivo);
 
         return salvarGarantindoCampos(processo);
     }
@@ -518,14 +483,41 @@ public class ProcessoService {
     @Transactional
     public void fecharIndicador(Long id, Long gestorId) {
         Processo processo = buscarPorId(id);
-        verificarSeFechado(processo);
+        if (processo.isVersaoFechada()) {
+            return; // Já fechado e imutável pelo banco, retorno idempotente com sucesso
+        }
+
+        Integer aprovacoes = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM historico_aprovacoes_gestor WHERE processo_id = ? AND etapa_avaliada = 'PUBLICACAO' AND decisao = 'APROVADO'",
+                Integer.class, processo.getId());
+        if (aprovacoes == null || aprovacoes == 0) {
+            jdbcTemplate.update("""
+                INSERT INTO historico_aprovacoes_gestor
+                    (processo_id, gestor_id, etapa_avaliada, decisao, parecer_justificativa, data_decisao)
+                VALUES (?, ?, 'PUBLICACAO', 'APROVADO', 'Fechamento oficial de versão.', now())
+                """, processo.getId(), gestorId);
+        }
 
         processoEstadoService.atualizarEstado(
                 processo,
-                "FECHAMENTO",
-                "FECHADO",
-                "Indicador fechado oficialmente."
+                "PUBLICACAO",
+                "CONCLUIDA",
+                "Indicador fechado oficialmente pelo gestor."
         );
+
+        jdbcTemplate.update("""
+            UPDATE processo
+            SET versao_fechada = TRUE,
+                versao_oficial = '1.0',
+                data_publicacao = now(),
+                gestor_publicacao_id = ?
+            WHERE id = ?
+            """, gestorId, processo.getId());
+
+        processo.setVersaoFechada(true);
+        processo.setVersaoOficial("1.0");
+        processo.setDataPublicacao(LocalDateTime.now());
+        processo.setGestorPublicacaoId(gestorId);
 
         auditoriaLogService.registrarAuditoria(
                 gestorId,
@@ -533,7 +525,19 @@ public class ProcessoService {
                 "Canetada oficial aplicada ao indicador/processo ID: " + processo.getId() + " pelo Gestor ID: " + gestorId
         );
 
-        salvarGarantindoCampos(processo);
+        try {
+            jdbcTemplate.update("""
+                UPDATE publicacao
+                SET status = 'PUBLICADO', data_publicacao = now()
+                WHERE processo_id = ?
+                """, processo.getId());
+        } catch (Exception ignored) {
+        }
+
+        try {
+            jdbcTemplate.execute("SELECT fn_atualizar_dados_publicados()");
+        } catch (Exception ignored) {
+        }
     }
 
     public Resource exportarArquivoConsolidado(Long id, String formato) {

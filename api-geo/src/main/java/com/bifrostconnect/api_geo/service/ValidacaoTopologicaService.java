@@ -37,6 +37,7 @@ public class ValidacaoTopologicaService {
              WHERE arquivo_processado_id = ?
                AND NOT ST_IsValid(geom)
              ORDER BY id
+             LIMIT 100
             """;
 
     // a.id < b.id pra cada par aparecer uma vez só. O CASE é pra só comparar geometria válida,
@@ -53,6 +54,7 @@ public class ValidacaoTopologicaService {
                         THEN ST_Equals(a.geom, b.geom)
                         ELSE FALSE END
              ORDER BY a.id, b.id
+             LIMIT 100
             """;
 
     // o ST_Relate '2********' só pega quando um entra na área do outro (encostar na divisa não conta).
@@ -74,6 +76,7 @@ public class ValidacaoTopologicaService {
                                 ELSE FALSE END) s
              WHERE s.hectares >= ?
              ORDER BY s.id_a, s.id_b
+             LIMIT 100
             """;
 
     private static final String SQL_ETAPA_ABERTA = """

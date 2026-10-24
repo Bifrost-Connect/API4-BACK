@@ -27,9 +27,12 @@ public class FeicaoCargaService {
     // o codigo_imovel lá no banco é VARCHAR(100), então corta se passar disso
     private static final int TAMANHO_MAX_CODIGO = 100;
 
-    // nomes de propriedade que a gente aceita como código do imóvel (tanto faz maiúscula ou minúscula)
-    private static final List<String> CHAVES_CODIGO_IMOVEL =
-            List.of("cod_imovel", "codigo_imovel", "id_propriedade", "cod_car", "car");
+    // nomes de propriedade que a gente aceita como código do imóvel ou feição geoespacial (em ordem de prioridade)
+    private static final List<String> CHAVES_CODIGO_IMOVEL = List.of(
+            "cod_imovel", "codigo_imovel", "id_propriedade", "cod_car", "car",
+            "cd_mun", "terrai_cod", "cnuc", "codigo_uc", "código uc",
+            "cd_sipra", "cd_quilomb", "seq_tad", "num_tad", "codigo",
+            "cod_bioma", "cd_bioma", "id_uc", "uuid", "fid", "gid");
 
     // o ST_Force2D tá aí porque a coluna é 2D e o banco recusa coordenada com Z
     private static final String SQL_INSERIR = """
@@ -176,13 +179,15 @@ public class FeicaoCargaService {
     static String extrairCodigoImovel(JsonNode feicao, int posicao) {
         JsonNode propriedades = feicao.get("properties");
         if (propriedades != null && propriedades.isObject()) {
-            Iterator<String> campos = propriedades.fieldNames();
-            while (campos.hasNext()) {
-                String campo = campos.next();
-                if (CHAVES_CODIGO_IMOVEL.contains(campo.toLowerCase(Locale.ROOT))) {
-                    String valor = propriedades.get(campo).asText("").trim();
-                    if (!valor.isEmpty()) {
-                        return valor.length() > TAMANHO_MAX_CODIGO ? valor.substring(0, TAMANHO_MAX_CODIGO) : valor;
+            for (String chavePrioritaria : CHAVES_CODIGO_IMOVEL) {
+                Iterator<String> campos = propriedades.fieldNames();
+                while (campos.hasNext()) {
+                    String campo = campos.next();
+                    if (chavePrioritaria.equals(campo.toLowerCase(Locale.ROOT))) {
+                        String valor = propriedades.get(campo).asText("").trim();
+                        if (!valor.isEmpty()) {
+                            return valor.length() > TAMANHO_MAX_CODIGO ? valor.substring(0, TAMANHO_MAX_CODIGO) : valor;
+                        }
                     }
                 }
             }

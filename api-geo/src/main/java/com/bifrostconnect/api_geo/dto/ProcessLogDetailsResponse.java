@@ -18,6 +18,9 @@ public class ProcessLogDetailsResponse {
     private String source;
     private String year;
     private String epsg;
+    private String epsgDetected;
+    private Boolean versaoFechada;
+    private String versaoOficial;
     private String description;
     private String integrityHash;
     private String originalFileUrl;
@@ -33,8 +36,9 @@ public class ProcessLogDetailsResponse {
     private String coberturaTemporalInicio;
     private String coberturaTemporalFim;
     
-    // As in mock, these can be empty lists initially
+    // Checklists e Quarentena reais
     private List<Object> validationChecks;
     private List<Object> treatmentChecks;
     private List<Object> analyticsData;
+    private List<Object> quarantineRecords;
 }

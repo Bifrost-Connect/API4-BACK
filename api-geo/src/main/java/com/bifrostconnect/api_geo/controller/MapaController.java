@@ -47,38 +47,15 @@ public class MapaController {
     }
 
     /**
-     * Tarefas 15 e 17: rota legada com blindagem e limite de payload.
+     * Tarefas 15 e 17: rota de pontos monitorados / bases cadastradas para o painel do mapa.
      */
     @GetMapping("/camadas-legado")
-    public ResponseEntity<List<CamadaReferencia>> listarCamadasAnalista(
+    public ResponseEntity<List<Map<String, Object>>> listarCamadasAnalista(
             @RequestParam(required = false) String conjunto,
             @RequestParam(required = false) Integer ano) {
 
-        try {
-            long totalRegistros =
-                    camadaReferenciaRepository.contarCamadasPublicadasAnalista(
-                            conjunto, ano);
-
-            long limiteMaximoPayload = 5000;
-
-            if (totalRegistros > limiteMaximoPayload) {
-                throw new ResponseStatusException(
-                        HttpStatus.PAYLOAD_TOO_LARGE,
-                        "Volume de dados excessivo (" + totalRegistros
-                                + " feições).");
-            }
-
-            List<CamadaReferencia> camadas =
-                    camadaReferenciaRepository.buscarCamadasPublicadasAnalista(
-                            conjunto, ano);
-
-            return ResponseEntity.ok(camadas);
-
-        } catch (ResponseStatusException e) {
-            throw e;
-        } catch (Exception e) {
-            return ResponseEntity.ok(List.of());
-        }
+        List<Map<String, Object>> bases = camadasMapaService.listarLocaisBasesPublicadas();
+        return ResponseEntity.ok(bases);
     }
 
     /**
@@ -96,7 +73,8 @@ public class MapaController {
             @RequestParam(required = false) String bbox,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size,
-            @RequestParam(required = false) String busca) {
+            @RequestParam(required = false) String busca,
+            @RequestParam(required = false) Long processoId) {
 
         if (page < 0) {
             throw new ResponseStatusException(
@@ -117,7 +95,8 @@ public class MapaController {
                         bbox,
                         page,
                         size,
-                        busca);
+                        busca,
+                        processoId);
 
         return ResponseEntity.ok(geoJson);
     }

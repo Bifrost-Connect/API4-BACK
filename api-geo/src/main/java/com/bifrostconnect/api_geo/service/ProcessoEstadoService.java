@@ -90,8 +90,8 @@ public class ProcessoEstadoService {
             .orElseThrow(() -> new IllegalArgumentException("Processo não encontrado com ID: " + processoId));
 
         // 1. Pausa a esteira atualizando o estado do processo usando o método existente
-        // A situação "Em validação" funciona como a Quarentena do sistema
-        processo = atualizarEstado(processo, etapaFalha, "Em validação", motivoErro);
+        // A situação "EM_VALIDACAO" funciona como a Quarentena do sistema
+        processo = atualizarEstado(processo, etapaFalha, "EM_VALIDACAO", motivoErro);
 
         // 2. Grava na tabela física de LogValidacao
         LogValidacao log = new LogValidacao();

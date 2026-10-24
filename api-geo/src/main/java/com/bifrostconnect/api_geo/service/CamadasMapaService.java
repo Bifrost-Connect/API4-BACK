@@ -2,6 +2,7 @@ package com.bifrostconnect.api_geo.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CamadasMapaService {
@@ -27,6 +29,17 @@ public class CamadasMapaService {
             int page,
             int size,
             String busca) {
+        return buscarCamadasPorFiltros(conjuntoId, anoSafra, bbox, page, size, busca, null);
+    }
+
+    public Map<String, Object> buscarCamadasPorFiltros(
+            Long conjuntoId,
+            String anoSafra,
+            String bbox,
+            int page,
+            int size,
+            String busca,
+            Long processoId) {
 
         if (page < 0) {
             throw new ResponseStatusException(
@@ -45,11 +58,20 @@ public class CamadasMapaService {
 
         List<Object> filtroParams = new ArrayList<>();
 
-        StringBuilder filtros = new StringBuilder("""
-                WHERE e.nome = 'PUBLICACAO'
+        StringBuilder filtros = new StringBuilder("WHERE 1=1\n");
+
+        if (processoId != null) {
+            // Quando consultado especificamente por processoId (ex.: prévia na tela da carga/revisão),
+            // permite visualizar as feições mesmo antes da publicação final.
+            filtros.append(" AND p.id = ?\n");
+            filtroParams.add(processoId);
+        } else {
+            filtros.append("""
+                  AND e.nome = 'PUBLICACAO'
                   AND s.nome = 'CONCLUIDA'
                   AND p.versao_fechada = TRUE
                 """);
+        }
 
         if (conjuntoId != null) {
             filtros.append(" AND p.conjunto_id = ?");
@@ -173,12 +195,13 @@ public class CamadasMapaService {
                         json_agg(
                             json_build_object(
                                 'type', 'Feature',
-                                'geometry', ST_AsGeoJSON(resultado.geom)::json,
+                                'geometry', ST_AsGeoJSON(ST_Transform(resultado.geom, 4326), 6)::json,
                                 'properties', json_build_object(
                                     'id', resultado.id,
                                     'processoId', resultado.processo_id,
                                     'codigoImovel', resultado.codigo_imovel,
-                                    'anoSafra', resultado.ano_safra
+                                    'anoSafra', resultado.ano_safra,
+                                    'areaHectares', resultado.area_hectares
                                 )
                             )
                             ORDER BY resultado.id
@@ -192,7 +215,8 @@ public class CamadasMapaService {
                         fc.geom,
                         fc.codigo_imovel,
                         p.id AS processo_id,
-                        p.ano_safra
+                        p.ano_safra,
+                        ROUND((ST_Area(fc.geom::geography) / 10000)::numeric, 4) AS area_hectares
                 """ + from + filtros + """
                     ORDER BY fc.id
                     LIMIT ? OFFSET ?
@@ -232,5 +256,44 @@ public class CamadasMapaService {
         );
 
         return resposta;
+    }
+
+    /**
+     * Retorna os locais (pontos/centroides e metadados) das bases oficiais publicadas
+     * para alimentar a lista de "Bases cadastradas" e os marcadores do mapa operacional.
+     */
+    public List<Map<String, Object>> listarLocaisBasesPublicadas() {
+        String sql = """
+            SELECT 
+                CAST(p.id AS TEXT) AS id,
+                COALESCE(c.nome, o.nome, 'Carga #' || p.id) AS name,
+                COALESCE(o.sigla || ' (' || p.ano_safra || ')', c.nome, 'Base Oficial') AS type,
+                'Concluída' AS status,
+                COALESCE(
+                    ST_Y(ST_Centroid(ST_Extent(ST_Transform(fc.geom, 4326))::geometry)),
+                    -15.7800
+                ) AS latitude,
+                COALESCE(
+                    ST_X(ST_Centroid(ST_Extent(ST_Transform(fc.geom, 4326))::geometry)),
+                    -47.9300
+                ) AS longitude,
+                COUNT(fc.id) AS total_feicoes
+            FROM processo p
+            JOIN etapa e ON e.id = p.etapa_atual_id
+            JOIN situacao s ON s.id = p.situacao_atual_id
+            LEFT JOIN conjunto c ON c.id = p.conjunto_id
+            LEFT JOIN orgao o ON o.id = p.orgao_id
+            LEFT JOIN arquivo_processado ap ON ap.processo_id = p.id
+            LEFT JOIN feicao_carga fc ON fc.arquivo_processado_id = ap.id
+            WHERE (p.versao_fechada = TRUE OR (e.nome = 'PUBLICACAO' AND s.nome = 'CONCLUIDA'))
+            GROUP BY p.id, c.nome, o.nome, o.sigla, p.ano_safra, s.nome
+            ORDER BY p.id DESC
+            """;
+        try {
+            return jdbcTemplate.queryForList(sql);
+        } catch (Exception e) {
+            log.error("Erro ao listar locais de bases publicadas: {}", e.getMessage(), e);
+            return List.of();
+        }
     }
 }

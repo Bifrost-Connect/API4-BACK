@@ -98,6 +98,10 @@ class FeicaoCargaServiceTest {
     void codigoDoImovelVemDasPropriedadesOuDaPosicao() throws Exception {
         assertEquals("MS-123", FeicaoCargaService.extrairCodigoImovel(
                 json("{\"properties\":{\"COD_IMOVEL\":\" MS-123 \"}}"), 1));
+        assertEquals("4106902", FeicaoCargaService.extrairCodigoImovel(
+                json("{\"properties\":{\"CD_MUN\":\"4106902\",\"fid\":\"1\"}}"), 2));
+        assertEquals("TI-40101", FeicaoCargaService.extrairCodigoImovel(
+                json("{\"properties\":{\"terrai_cod\":\"TI-40101\"}}"), 3));
         assertEquals("FEICAO_7", FeicaoCargaService.extrairCodigoImovel(
                 json("{\"properties\":{\"nome\":\"Fazenda\"}}"), 7));
     }

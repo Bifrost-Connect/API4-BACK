@@ -24,6 +24,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.bifrostconnect.api_geo.dto.CalculosCargaResponse;
 import com.bifrostconnect.api_geo.dto.CancelamentoRequest;
+import com.bifrostconnect.api_geo.dto.DecisaoGestorRequest;
+import com.bifrostconnect.api_geo.dto.AlocarAuditorRequest;
 import com.bifrostconnect.api_geo.dto.LinhagemResponseDTO;
 import com.bifrostconnect.api_geo.dto.MetadadosCargaRequest;
 import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
@@ -33,7 +35,9 @@ import com.bifrostconnect.api_geo.service.ArquivoUploadService;
 import com.bifrostconnect.api_geo.service.AuditoriaLogService;
 import com.bifrostconnect.api_geo.service.CalculoAnaliticoService;
 import com.bifrostconnect.api_geo.service.CancelamentoCargaService;
+import com.bifrostconnect.api_geo.service.CargaCamadaReferenciaService;
 import com.bifrostconnect.api_geo.service.EncaminhamentoQuarentenaService;
+import com.bifrostconnect.api_geo.service.GestorDecisaoService;
 import com.bifrostconnect.api_geo.service.LinhagemService;
 import com.bifrostconnect.api_geo.service.MetadadosCargaService;
 import com.bifrostconnect.api_geo.service.ReprocessamentoCargaService;
@@ -54,6 +58,8 @@ public class CargaController {
     private final EncaminhamentoQuarentenaService encaminhamentoQuarentenaService;    
     private final ReprocessamentoCargaService reprocessamentoCargaService;
     private final CancelamentoCargaService cancelamentoCargaService;
+    private final GestorDecisaoService gestorDecisaoService;
+    private final CargaCamadaReferenciaService cargaCamadaReferenciaService;
     
     // Construtor unificado corrigido
     public CargaController(
@@ -65,7 +71,9 @@ public class CargaController {
             ExportacaoRejeicoesService exportacaoRejeicoesService,
             EncaminhamentoQuarentenaService encaminhamentoQuarentenaService,
             ReprocessamentoCargaService reprocessamentoCargaService,
-            CancelamentoCargaService cancelamentoCargaService) {
+            CancelamentoCargaService cancelamentoCargaService,
+            GestorDecisaoService gestorDecisaoService,
+            CargaCamadaReferenciaService cargaCamadaReferenciaService) {
 
         this.metadadosCargaService = metadadosCargaService;
         this.arquivoUploadService = arquivoUploadService;
@@ -76,6 +84,8 @@ public class CargaController {
         this.encaminhamentoQuarentenaService = encaminhamentoQuarentenaService;
         this.reprocessamentoCargaService = reprocessamentoCargaService;
         this.cancelamentoCargaService = cancelamentoCargaService;
+        this.gestorDecisaoService = gestorDecisaoService;
+        this.cargaCamadaReferenciaService = cargaCamadaReferenciaService;
     }
 
     @GetMapping("/{id}/calculos")
@@ -103,6 +113,13 @@ public class CargaController {
                 .body(processoSalvo);
     }
 
+    private boolean isFormatoPermitido(String nomeArquivo) {
+        if (nomeArquivo == null) return false;
+        String n = nomeArquivo.toLowerCase();
+        return n.endsWith(".zip") || n.endsWith(".geojson") || n.endsWith(".json")
+                || n.endsWith(".csv") || n.endsWith(".gpkg") || n.endsWith(".kml") || n.endsWith(".kmz");
+    }
+
     // Tarefa 4, 5 e 7: Recebe o arquivo, realiza o upload e registra na auditoria.
     @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
     @PostMapping("/upload")
@@ -122,13 +139,10 @@ public class CargaController {
 
         String nomeArquivo = file.getOriginalFilename();
 
-        if (nomeArquivo == null
-                || (!nomeArquivo.toLowerCase().endsWith(".zip")
-                && !nomeArquivo.toLowerCase().endsWith(".geojson"))) {
-
+        if (!isFormatoPermitido(nomeArquivo)) {
             throw new UnsupportedFileFormatException(
                     "Formato de arquivo não permitido. "
-                    + "Envie apenas arquivos .zip ou .geojson.");
+                    + "Envie apenas arquivos nos formatos suportados: GeoJSON (.geojson, .json), Shapefile (.zip), CSV (.csv, .zip), GeoPackage (.gpkg) ou KML (.kml, .kmz).");
         }
 
         try {
@@ -136,7 +150,8 @@ public class CargaController {
             ArquivoOriginal arquivoSalvo =
                     arquivoUploadService.processarUpload(
                             processoId,
-                            file);
+                            file,
+                            usuarioId);
 
             // Registro do evento de auditoria após upload bem-sucedido.
             auditoriaLogService.registrarAuditoria(
@@ -297,6 +312,10 @@ public class CargaController {
                 return ResponseEntity.badRequest().body("O arquivo enviado para reprocessamento está vazio.");
         }
 
+        if (!isFormatoPermitido(file.getOriginalFilename())) {
+                return ResponseEntity.badRequest().body("Formato de arquivo não permitido para reprocessamento. Formatos suportados: .geojson, .json, .zip, .csv, .gpkg, .kml, .kmz");
+        }
+
         try {
                 ArquivoOriginal arquivoNovo = reprocessamentoCargaService.reprocessarCarga(id, file, usuarioId);
                 return ResponseEntity.status(HttpStatus.CREATED).body(arquivoNovo);
@@ -322,5 +341,59 @@ public class CargaController {
 
         cancelamentoCargaService.cancelarCarga(id, request.getMotivo(), usuarioId);
         return ResponseEntity.noContent().build();
+    }
+
+    // ==========================================
+    // Gate de Decisão do Gestor (Validação, Tratamento, Publicação)
+    // ==========================================
+    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR')")
+    @PostMapping("/{id}/decisao-gestor")
+    public ResponseEntity<Map<String, Object>> registrarDecisaoGestor(
+            @PathVariable Long id,
+            @Valid @RequestBody DecisaoGestorRequest request) {
+
+        Map<String, Object> resp = gestorDecisaoService.processarDecisao(id, request);
+        return ResponseEntity.ok(resp);
+    }
+
+    // ==========================================
+    // Alocação de Auditor na Quarentena
+    // ==========================================
+    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR')")
+    @PostMapping("/{id}/alocar-auditor")
+    public ResponseEntity<Map<String, Object>> alocarAuditor(
+            @PathVariable Long id,
+            @Valid @RequestBody AlocarAuditorRequest request) {
+
+        Map<String, Object> resp = gestorDecisaoService.alocarAuditor(id, request.getAuditorId(), request.getGestorId());
+        return ResponseEntity.ok(resp);
+    }
+
+    // ==========================================
+    // Listagem de Auditores Ativos
+    // ==========================================
+    @GetMapping("/auditores")
+    public ResponseEntity<?> listarAuditoresAtivos() {
+        return ResponseEntity.ok(gestorDecisaoService.listarAuditoresAtivos());
+    }
+
+    // ==========================================
+    // Histórico de Decisões do Gestor por Processo
+    // ==========================================
+    @GetMapping("/{id}/decisoes-gestor")
+    public ResponseEntity<?> listarDecisoesPorProcesso(@PathVariable Long id) {
+        return ResponseEntity.ok(gestorDecisaoService.listarDecisoesPorProcesso(id));
+    }
+
+    // ==========================================
+    // Importação em lote da pasta GEOESPACIAIS para camada_referencia
+    // ==========================================
+    @PreAuthorize("hasAnyRole('OPERADOR', 'AUDITOR', 'ADMINISTRADOR')")
+    @PostMapping("/referencias/importar")
+    public ResponseEntity<Map<String, Object>> importarReferenciasGeoespaciais(
+            @RequestParam(value = "fonte", required = false) String fonte,
+            @RequestParam(value = "limitePorFonte", required = false, defaultValue = "5000") int limitePorFonte) {
+        Map<String, Object> relatorio = cargaCamadaReferenciaService.importarReferenciasGeoespaciais(fonte, limitePorFonte);
+        return ResponseEntity.ok(relatorio);
     }
 }

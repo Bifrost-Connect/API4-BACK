@@ -38,37 +38,19 @@ public class ArquivoUploadService {
     public ArquivoOriginal processarUpload(
             Long processoId,
             MultipartFile file) throws Exception {
+        return processarUpload(processoId, file, 1L);
+    }
+
+    @Transactional
+    public ArquivoOriginal processarUpload(
+            Long processoId,
+            MultipartFile file,
+            Long usuarioId) throws Exception {
 
         Processo processo = processoRepository.findById(processoId)
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Processo não encontrado com ID: " + processoId));
-
-        /*
-         * Gera o Hash SHA-256 utilizando os bytes
-         * do arquivo recebido.
-         */
-        byte[] arquivoBytes = file.getBytes();
-
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hashBytes = digest.digest(arquivoBytes);
-
-        StringBuilder hexString = new StringBuilder();
-
-        for (byte b : hashBytes) {
-            hexString.append(String.format("%02x", b));
-        }
-
-        String hashSha256 = hexString.toString();
-
-        /*
-         * Impede arquivos duplicados.
-         */
-        if (arquivoRepository.existsByHashSha256(hashSha256)) {
-            throw new IllegalArgumentException(
-                    "Este arquivo já foi processado anteriormente "
-                            + "(Hash SHA-256 duplicado).");
-        }
 
         /*
          * Obtém o nome original do arquivo.
@@ -105,11 +87,34 @@ public class ArquivoUploadService {
                 STORAGE_DIR.resolve(nomeFisico);
 
         /*
-         * AQUI está a alteração principal da tarefa:
-         * o arquivo recebido passa a ser realmente
-         * gravado no disco.
+         * Grava o arquivo físico no disco por streaming calculando o Hash SHA-256 simultaneamente,
+         * sem carregar todo o arquivo para a memória heap.
          */
-        Files.write(caminhoFisico, arquivoBytes);
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (java.io.InputStream in = file.getInputStream();
+             java.io.OutputStream out = Files.newOutputStream(caminhoFisico);
+             java.security.DigestInputStream dis = new java.security.DigestInputStream(in, digest)) {
+            dis.transferTo(out);
+        }
+
+        byte[] hashBytes = digest.digest();
+
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : hashBytes) {
+            hexString.append(String.format("%02x", b));
+        }
+
+        String hashSha256 = hexString.toString();
+
+        /*
+         * Impede arquivos duplicados.
+         */
+        if (arquivoRepository.existsByHashSha256(hashSha256)) {
+            Files.deleteIfExists(caminhoFisico);
+            throw new IllegalArgumentException(
+                    "Este arquivo já foi processado anteriormente "
+                            + "(Hash SHA-256 duplicado).");
+        }
 
         try {
 
@@ -123,7 +128,7 @@ public class ArquivoUploadService {
             /*
              * Campo obrigatório existente no projeto.
              */
-            arquivo.setUsuarioUploadId(1L);
+            arquivo.setUsuarioUploadId(usuarioId != null ? usuarioId : 1L);
 
             arquivo.setTipoMime(file.getContentType());
 

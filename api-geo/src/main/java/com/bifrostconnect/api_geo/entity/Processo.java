@@ -89,4 +89,17 @@ public class Processo {
 
     @Column(name = "cobertura_temporal_fim")
     private java.time.LocalDate coberturaTemporalFim;
+
+    // Versionamento e Congelamento (US07 / V22)
+    @Column(name = "versao_oficial")
+    private String versaoOficial;
+
+    @Column(name = "versao_fechada")
+    private boolean versaoFechada;
+
+    @Column(name = "data_publicacao")
+    private LocalDateTime dataPublicacao;
+
+    @Column(name = "gestor_publicacao_id")
+    private Long gestorPublicacaoId;
 }

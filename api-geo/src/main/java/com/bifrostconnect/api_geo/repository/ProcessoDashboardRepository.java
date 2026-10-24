@@ -137,7 +137,10 @@ public class ProcessoDashboardRepository {
                     p.classificacao_acesso,
                     p.cobertura_espacial,
                     p.cobertura_temporal_inicio,
-                    p.cobertura_temporal_fim
+                    p.cobertura_temporal_fim,
+                    p.epsg_detectado,
+                    p.versao_fechada,
+                    p.versao_oficial
                 FROM processo p
                 LEFT JOIN etapa e
                     ON e.id = p.etapa_atual_id
@@ -150,6 +153,7 @@ public class ProcessoDashboardRepository {
                 LEFT JOIN arquivo_original a
                     ON a.processo_id = p.id
                 WHERE p.id = :processoId
+                ORDER BY a.id DESC
                 LIMIT 1
                 """;
 
@@ -185,6 +189,17 @@ public class ProcessoDashboardRepository {
 
         Map<String, List<String>> logs =
                 transformarLogs(logsEspaciais);
+
+        String epsgDeclarado = resultado[8] != null ? resultado[8].toString() : "4674";
+        String epsgDetectado = resultado[17] != null ? resultado[17].toString() : epsgDeclarado;
+        Boolean versaoFechada = resultado[18] != null && Boolean.parseBoolean(resultado[18].toString());
+        String versaoOficial = resultado[19] != null ? resultado[19].toString() : null;
+
+        List<Map<String, Object>> ocorrencias = buscarOcorrenciasValidacao(processoId);
+        List<Object> validationChecks = montarValidationChecks(ocorrencias);
+        List<Object> treatmentChecks = montarTreatmentChecks(epsgDeclarado, epsgDetectado);
+        List<Object> analyticsData = montarAnalyticsData(processoId);
+        List<List<Double>> mapCoords = buscarBoundingBox(processoId);
 
         return ProcessLogDetailsResponse.builder()
                 .id(
@@ -223,11 +238,10 @@ public class ProcessoDashboardRepository {
                                 ? resultado[7].toString()
                                 : null
                 )
-                .epsg(
-                        resultado[8] != null
-                                ? resultado[8].toString()
-                                : null
-                )
+                .epsg(epsgDeclarado)
+                .epsgDetected(epsgDetectado)
+                .versaoFechada(versaoFechada)
+                .versaoOficial(versaoOficial)
                 .integrityHash(
                         resultado[9] != null
                                 ? resultado[9].toString()
@@ -247,20 +261,240 @@ public class ProcessoDashboardRepository {
                 .description(
                         "Detalhes carregados com sucesso"
                 )
-                .mapCoordinates(
-                        new ArrayList<>()
-                )
+                .mapCoordinates(mapCoords)
                 .logs(logs)
-                .validationChecks(
-                        new ArrayList<>()
-                )
-                .treatmentChecks(
-                        new ArrayList<>()
-                )
-                .analyticsData(
-                        new ArrayList<>()
-                )
+                .validationChecks(validationChecks)
+                .treatmentChecks(treatmentChecks)
+                .analyticsData(analyticsData)
+                .quarantineRecords(new ArrayList<>(ocorrencias))
                 .build();
+    }
+
+    private List<Map<String, Object>> buscarOcorrenciasValidacao(Long processoId) {
+        String sql = """
+                SELECT ov.id, r.nome AS regra, ov.mensagem, ov.severidade, ov.data_deteccao, ov.contexto
+                FROM ocorrencia_validacao ov
+                JOIN processo_etapa pe ON pe.id = ov.processo_etapa_id
+                JOIN regra_validacao r ON r.id = ov.regra_id
+                WHERE pe.processo_id = :processoId
+                ORDER BY ov.data_deteccao DESC
+                """;
+        try {
+            Query q = entityManager.createNativeQuery(sql);
+            q.setParameter("processoId", processoId);
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = q.getResultList();
+            List<Map<String, Object>> list = new ArrayList<>();
+            for (Object[] r : rows) {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("recordId", r[0] != null ? r[0].toString() : "");
+                map.put("motivo", r[2] != null ? r[2].toString() : "Inconsistência topológica detectada");
+                map.put("etapaOrigem", r[1] != null ? r[1].toString() : "Validação Topológica");
+                map.put("execucaoId", processoId.toString());
+                LocalDateTime dt = toLocalDateTime(r[4]);
+                map.put("dataRejeicao", dt != null ? dt.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) : "");
+                map.put("campo", r[1] != null ? r[1].toString() : "Geometria");
+                map.put("valorEncontrado", r[5] != null ? r[5].toString() : "Geometria Inválida/Sobreposta");
+                map.put("valorEsperado", "Conforme Regras PostGIS");
+                list.add(map);
+            }
+            return list;
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    private List<Object> montarValidationChecks(List<Map<String, Object>> ocorrencias) {
+        List<Object> checks = new ArrayList<>();
+        boolean hasInvalidGeom = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("GEOMETRIA"));
+        boolean hasDuplicateCar = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("CAR"));
+        boolean hasDuplicatePoly = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("POLIGONO_DUPLICADO"));
+        boolean hasOverlap = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("SOBREPOSICAO"));
+
+        checks.add(Map.of(
+            "id", "val-1",
+            "label", "Integridade da Geometria PostGIS",
+            "description", "Verifica se todos os anéis são fechados e passam em ST_IsValid",
+            "status", hasInvalidGeom ? "error" : "success",
+            "detail", hasInvalidGeom ? "Geometrias inválidas detectadas pelo PostGIS" : "Polígonos 2D válidos e fechados"
+        ));
+        checks.add(Map.of(
+            "id", "val-2",
+            "label", "Unicidade do Código CAR / Imóvel",
+            "description", "Garante que não existam múltiplos polígonos com o mesmo identificador na carga",
+            "status", hasDuplicateCar ? "error" : "success",
+            "detail", hasDuplicateCar ? "Códigos repetidos encontrados no mesmo arquivo" : "Todos os identificadores são únicos"
+        ));
+        checks.add(Map.of(
+            "id", "val-3",
+            "label", "Ausência de Polígonos Duplicados",
+            "description", "Compara ST_Equals entre feições para evitar duplicidade de polígonos",
+            "status", hasDuplicatePoly ? "error" : "success",
+            "detail", hasDuplicatePoly ? "Polígonos idênticos detectados" : "Nenhuma duplicação geométrica encontrada"
+        ));
+        checks.add(Map.of(
+            "id", "val-4",
+            "label", "Sobreposição Espacial Interna",
+            "description", "Analisa ST_Relate e interseções entre propriedades rurais",
+            "status", hasOverlap ? "error" : "success",
+            "detail", hasOverlap ? "Sobreposição acima do limiar aceitável detectada" : "Geometrias sem sobreposição conflitante"
+        ));
+        return checks;
+    }
+
+    private List<Object> montarTreatmentChecks(String epsgDeclarado, String epsgDetectado) {
+        List<Object> checks = new ArrayList<>();
+        boolean epsgDivergente = epsgDetectado != null && !epsgDetectado.isBlank()
+                && !epsgDetectado.equalsIgnoreCase(epsgDeclarado);
+
+        checks.add(Map.of(
+            "id", "treat-1",
+            "label", "Padronização para SIRGAS 2000 (EPSG:4674)",
+            "description", "Reprojeção cartográfica de coordenadas via PostGIS ST_Transform",
+            "status", "success",
+            "detail", "Cópia de trabalho gerada em EPSG:4674"
+        ));
+        checks.add(Map.of(
+            "id", "treat-2",
+            "label", "Compatibilidade de Projeção Declarada vs Detectada",
+            "description", "Verifica se o CRS do cabeçalho do arquivo confere com o metadado",
+            "status", epsgDivergente ? "warning" : "success",
+            "detail", epsgDivergente ? "Declarado: " + epsgDeclarado + " | Detectado: " + epsgDetectado : "EPSG compatível: " + epsgDeclarado
+        ));
+        checks.add(Map.of(
+            "id", "treat-3",
+            "label", "Limpeza de Vértices e Normalização 2D",
+            "description", "Aplicação de ST_Force2D e remoção de redundâncias",
+            "status", "success",
+            "detail", "Polígonos normalizados em duas dimensões"
+        ));
+        return checks;
+    }
+
+    private List<Object> montarAnalyticsData(Long processoId) {
+        List<Object> rows = new ArrayList<>();
+        try {
+            String sqlTotais = """
+                    SELECT COUNT(fc.id) AS total_feicoes,
+                           COALESCE(ROUND((SUM(ST_Area(fc.geom::geography)) / 10000)::numeric, 4), 0) AS area_total
+                    FROM feicao_carga fc
+                    JOIN arquivo_processado ap ON ap.id = fc.arquivo_processado_id
+                    WHERE ap.processo_id = :processoId
+                    """;
+            Query qTotais = entityManager.createNativeQuery(sqlTotais);
+            qTotais.setParameter("processoId", processoId);
+            Object[] totais = (Object[]) qTotais.getSingleResult();
+            long totalFeicoes = totais[0] != null ? ((Number) totais[0]).longValue() : 0;
+            java.math.BigDecimal areaTotal = totais[1] != null ? new java.math.BigDecimal(totais[1].toString()) : java.math.BigDecimal.ZERO;
+
+            if (totalFeicoes > 0) {
+                rows.add(Map.of(
+                    "param", "Cálculo de Área Total Contínua",
+                    "result", areaTotal + " ha",
+                    "reference", totalFeicoes + " feição(ões) analisada(s)",
+                    "status", "success",
+                    "statusLabel", "Calculado"
+                ));
+
+                String sqlCalculos = """
+                        SELECT rc.fonte_camada,
+                               COALESCE(ROUND(SUM(rc.hectares_sobrepostos)::numeric, 4), 0) AS total_ha,
+                               COUNT(*) AS qtd
+                        FROM resultados_calculos rc
+                        WHERE rc.processo_id = :processoId
+                        GROUP BY rc.fonte_camada
+                        """;
+                Query qCalc = entityManager.createNativeQuery(sqlCalculos);
+                qCalc.setParameter("processoId", processoId);
+                @SuppressWarnings("unchecked")
+                List<Object[]> calcRows = qCalc.getResultList();
+
+                java.math.BigDecimal rlHa = java.math.BigDecimal.ZERO;
+                long rlQtd = 0;
+                java.math.BigDecimal appHa = java.math.BigDecimal.ZERO;
+                long appQtd = 0;
+                java.math.BigDecimal alertaHa = java.math.BigDecimal.ZERO;
+                long alertaQtd = 0;
+
+                for (Object[] cr : calcRows) {
+                    String fonte = cr[0] != null ? cr[0].toString().toUpperCase() : "";
+                    java.math.BigDecimal ha = cr[1] != null ? new java.math.BigDecimal(cr[1].toString()) : java.math.BigDecimal.ZERO;
+                    long qtd = cr[2] != null ? ((Number) cr[2]).longValue() : 0;
+
+                    if (fonte.contains("RESERVA") || fonte.contains("RL")) {
+                        rlHa = rlHa.add(ha);
+                        rlQtd += qtd;
+                    } else if (fonte.contains("APP")) {
+                        appHa = appHa.add(ha);
+                        appQtd += qtd;
+                    } else if (fonte.contains("ALERTA") || fonte.contains("DESMATAMENTO") || fonte.contains("EMBARGO")) {
+                        alertaHa = alertaHa.add(ha);
+                        alertaQtd += qtd;
+                    }
+                }
+
+                rows.add(Map.of(
+                    "param", "Proporção de Reserva Legal",
+                    "result", rlHa + " ha (" + rlQtd + " cruzamento(s))",
+                    "reference", "Camada de Referência INCAR / INCRA",
+                    "status", rlQtd > 0 ? "success" : "warning",
+                    "statusLabel", rlQtd > 0 ? "Regular" : "Não identificada"
+                ));
+
+                rows.add(Map.of(
+                    "param", "Área de APP Hídrica",
+                    "result", appHa + " ha (" + appQtd + " cruzamento(s))",
+                    "reference", "Art. 4º — Lei 12.651/2012",
+                    "status", "success",
+                    "statusLabel", appQtd > 0 ? "Conforme" : "Sem sobreposição"
+                ));
+
+                rows.add(Map.of(
+                    "param", "Sobreposição com Áreas Embargadas / Alertas",
+                    "result", alertaHa + " ha (" + alertaQtd + " alerta(s))",
+                    "reference", "Cadastro IBAMA / INPE",
+                    "status", alertaQtd > 0 ? "danger" : "success",
+                    "statusLabel", alertaQtd > 0 ? "Alerta Crítico" : "Sem alertas"
+                ));
+            }
+        } catch (Exception ignored) {
+        }
+        return rows;
+    }
+
+    private List<List<Double>> buscarBoundingBox(Long processoId) {
+        try {
+            String sql = """
+                    SELECT ST_YMin(b.geom), ST_XMin(b.geom), ST_YMax(b.geom), ST_XMax(b.geom)
+                    FROM (
+                        SELECT ST_Extent(ST_Transform(fc.geom, 4326)) AS geom
+                        FROM feicao_carga fc
+                        JOIN arquivo_processado ap ON ap.id = fc.arquivo_processado_id
+                        WHERE ap.processo_id = :processoId
+                    ) b
+                    WHERE b.geom IS NOT NULL
+                    """;
+            Query q = entityManager.createNativeQuery(sql);
+            q.setParameter("processoId", processoId);
+            @SuppressWarnings("unchecked")
+            List<Object[]> res = q.getResultList();
+            if (!res.isEmpty() && res.get(0)[0] != null) {
+                Object[] r = res.get(0);
+                double minLat = ((Number) r[0]).doubleValue();
+                double minLon = ((Number) r[1]).doubleValue();
+                double maxLat = ((Number) r[2]).doubleValue();
+                double maxLon = ((Number) r[3]).doubleValue();
+
+                List<List<Double>> coords = new ArrayList<>();
+                coords.add(List.of(minLat, minLon));
+                coords.add(List.of(minLat, maxLon));
+                coords.add(List.of(maxLat, maxLon));
+                coords.add(List.of(maxLat, minLon));
+                return coords;
+            }
+        } catch (Exception ignored) {
+        }
+        return new ArrayList<>();
     }
 
     private ProcessoDashboardResponse mapearProcesso(

@@ -38,24 +38,31 @@ public class RevisaoPublicacaoService {
 
         Map<String, Object> resumo = jdbcTemplate.queryForMap(sqlResumo, idCarga);
 
-        // 3. Constrói a estrutura do GeoJSON FeatureCollection combinando as geometrias salvas
+        // 3. Constrói a estrutura do GeoJSON FeatureCollection combinando as geometrias salvas (amostra de até 500 para prévia responsiva)
         String sqlGeoJson = """
             SELECT json_build_object(
                 'type', 'FeatureCollection',
                 'features', COALESCE(json_agg(
                     json_build_object(
                         'type', 'Feature',
-                        'geometry', ST_AsGeoJSON(fc.geom)::json,
+                        'geometry', ST_AsGeoJSON(ST_Transform(fc.geom, 4326), 6)::json,
                         'properties', json_build_object(
                             'id', fc.id,
-                            'identificador', fc.codigo_imovel
+                            'identificador', fc.codigo_imovel,
+                            'codigoImovel', fc.codigo_imovel,
+                            'areaHectares', ROUND((ST_Area(fc.geom::geography) / 10000)::numeric, 4),
+                            'atributos', fc.atributos
                         )
                     )
                 ), '[]'::json)
             ) as geojson
-            FROM feicao_carga fc
-            JOIN arquivo_processado ap ON fc.arquivo_processado_id = ap.id
-            WHERE ap.processo_id = ?
+            FROM (
+                SELECT fc.id, fc.geom, fc.codigo_imovel, fc.atributos
+                FROM feicao_carga fc
+                JOIN arquivo_processado ap ON fc.arquivo_processado_id = ap.id
+                WHERE ap.processo_id = ?
+                LIMIT 500
+            ) fc
             """;
 
         String geoJsonString = jdbcTemplate.queryForObject(sqlGeoJson, String.class, idCarga);

@@ -24,7 +24,7 @@ public class ReprocessamentoCargaService {
 
         try {
             // 2. Processa o upload do novo arquivo corrigido com tratamento de exceção
-            ArquivoOriginal novoArquivo = arquivoUploadService.processarUpload(processo.getId(), file);
+            ArquivoOriginal novoArquivo = arquivoUploadService.processarUpload(processo.getId(), file, usuarioId);
 
             // 3. Registra na auditoria
             auditoriaLogService.registrarAuditoria(
@@ -37,6 +37,8 @@ public class ReprocessamentoCargaService {
 
             return novoArquivo;
 
+        } catch (IllegalArgumentException | org.springframework.dao.DataIntegrityViolationException e) {
+            throw e;
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Erro ao processar o reupload do arquivo: " + e.getMessage());
         }
