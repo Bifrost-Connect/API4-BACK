@@ -58,7 +58,7 @@ class BlindagemMapaAnalistaIntegrationTest {
         Long publicada = criarCargaComFeicao("PUBLICACAO", "CONCLUIDA");
         fecharVersao(publicada);
 
-        mockMvc.perform(get("/api/mapa/camadas").param("bbox", BBOX))
+        mockMvc.perform(get("/mapa/camadas").param("bbox", BBOX))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.type").value("FeatureCollection"))
                 .andExpect(jsonPath("$.features[?(@.properties.processoId == " + emTratamento + ")]").isEmpty())

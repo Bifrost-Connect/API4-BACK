@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping({"/publicacao", "/api/publicacao"})
+@RequestMapping("/publicacao")
 public class PublicacaoController {
 
     private final RevisaoPublicacaoService revisaoPublicacaoService;

@@ -57,7 +57,7 @@ class CatalogoBasesIntegrationTest {
         Long publicada = criarBase("PUBLICACAO", "CONCLUIDA");
         fecharVersao(publicada);
 
-        mockMvc.perform(get("/api/catalogo/bases").param("anoSafra", anoSafra))
+        mockMvc.perform(get("/catalogo/bases").param("anoSafra", anoSafra))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].id").value(publicada))
@@ -73,7 +73,7 @@ class CatalogoBasesIntegrationTest {
         // tem base nesse ano, mas nenhuma publicada: pela trava o catálogo fica vazio
         criarBase("TRATAMENTO", "EM_ANDAMENTO");
 
-        mockMvc.perform(get("/api/catalogo/bases").param("anoSafra", anoSafra))
+        mockMvc.perform(get("/catalogo/bases").param("anoSafra", anoSafra))
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""));
     }
@@ -85,7 +85,7 @@ class CatalogoBasesIntegrationTest {
         Long publicada = criarBase("PUBLICACAO", "CONCLUIDA");
         fecharVersao(publicada);
 
-        mockMvc.perform(get("/api/catalogo/bases/{id}", publicada))
+        mockMvc.perform(get("/catalogo/bases/{id}", publicada))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(publicada))
                 .andExpect(jsonPath("$.ano_safra").value(anoSafra))
@@ -96,7 +96,7 @@ class CatalogoBasesIntegrationTest {
     @DisplayName("US09 - Tarefa 8: ID de base inexistente devolve 404 padronizado")
     @WithMockUser(roles = "ANALISTA")
     void deveRetornar404ParaBaseInexistente() throws Exception {
-        mockMvc.perform(get("/api/catalogo/bases/{id}", Long.MAX_VALUE))
+        mockMvc.perform(get("/catalogo/bases/{id}", Long.MAX_VALUE))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.erro").exists());
     }
@@ -107,7 +107,7 @@ class CatalogoBasesIntegrationTest {
     void deveRetornar404ParaBaseNaoPublicada() throws Exception {
         Long emTratamento = criarBase("TRATAMENTO", "EM_ANDAMENTO");
 
-        mockMvc.perform(get("/api/catalogo/bases/{id}", emTratamento))
+        mockMvc.perform(get("/catalogo/bases/{id}", emTratamento))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.erro").exists());
     }

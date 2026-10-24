@@ -14,7 +14,7 @@ import com.bifrostconnect.api_geo.dto.CruzamentoAnaliseResponse;
 import com.bifrostconnect.api_geo.service.AnaliseCruzamentoService;
 
 @RestController
-@RequestMapping({"/analise", "/api/analise"})
+@RequestMapping("/analise")
 public class AnaliseController {
 
     private final AnaliseCruzamentoService analiseCruzamentoService;

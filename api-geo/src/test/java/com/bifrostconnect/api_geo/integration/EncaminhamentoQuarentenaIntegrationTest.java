@@ -48,7 +48,7 @@ public class EncaminhamentoQuarentenaIntegrationTest {
                 .build();
         p = processoRepository.saveAndFlush(p);
 
-        mockMvc.perform(post("/api/carga/" + p.getId() + "/quarentena/notificar-operador"))
+        mockMvc.perform(post("/carga/" + p.getId() + "/quarentena/notificar-operador"))
                 .andExpect(status().isNoContent());
     }
 
@@ -56,7 +56,7 @@ public class EncaminhamentoQuarentenaIntegrationTest {
     @DisplayName("Tarefa 17: Deve retornar 404 Not Found se o processo não existir")
     @WithMockUser(roles = "AUDITOR")
     void deveRetornar404QuandoProcessoNaoExistir() throws Exception {
-        mockMvc.perform(post("/api/carga/99999/quarentena/notificar-operador"))
+        mockMvc.perform(post("/carga/99999/quarentena/notificar-operador"))
                 .andExpect(status().isNotFound());
     }
 }

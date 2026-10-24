@@ -60,7 +60,7 @@ class ConsolidacaoPublicacaoIntegrationTest {
             VALUES (?, ?, 'IMOVEL_T12', 'IBAMA_EMBARGO', 'EMB-1', 12.5)
             """, processoId, copiaId);
 
-        String json = mockMvc.perform(post("/api/publicacao/{id}/aprovar-tratamento", processoId)
+        String json = mockMvc.perform(post("/publicacao/{id}/aprovar-tratamento", processoId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"gestorId\": 1, \"parecer\": \"ok\"}"))
                 .andExpect(status().isCreated())
@@ -93,7 +93,7 @@ class ConsolidacaoPublicacaoIntegrationTest {
         assertThat(etapaAtual).isEqualTo("PUBLICACAO");
 
         // segunda aprovação com pacote pendente dá conflito
-        mockMvc.perform(post("/api/publicacao/{id}/aprovar-tratamento", processoId)
+        mockMvc.perform(post("/publicacao/{id}/aprovar-tratamento", processoId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"gestorId\": 1}"))
                 .andExpect(status().isConflict());
@@ -108,7 +108,7 @@ class ConsolidacaoPublicacaoIntegrationTest {
         Long processoId = criarCarga("VALIDACAO", "EM_VALIDACAO");
         criarCopiaTratada(processoId);
 
-        mockMvc.perform(post("/api/publicacao/{id}/aprovar-tratamento", processoId)
+        mockMvc.perform(post("/publicacao/{id}/aprovar-tratamento", processoId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"gestorId\": 1}"))
                 .andExpect(status().isConflict());

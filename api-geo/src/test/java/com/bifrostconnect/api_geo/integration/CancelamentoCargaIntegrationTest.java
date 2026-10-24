@@ -51,7 +51,7 @@ public class CancelamentoCargaIntegrationTest {
 
         String jsonBody = "{\"motivo\": \"Dados geográficos inconsistentes com a base oficial.\"}";
 
-        mockMvc.perform(patch("/api/carga/" + p.getId() + "/cancelar")
+        mockMvc.perform(patch("/carga/" + p.getId() + "/cancelar")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jsonBody))
                 .andExpect(status().isNoContent());
@@ -63,7 +63,7 @@ public class CancelamentoCargaIntegrationTest {
     void deveRetornar404QuandoProcessoNaoExistir() throws Exception {
         String jsonBody = "{\"motivo\": \"Processo inexistente.\"}";
 
-        mockMvc.perform(patch("/api/carga/99999/cancelar")
+        mockMvc.perform(patch("/carga/99999/cancelar")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jsonBody))
                 .andExpect(status().isNotFound());

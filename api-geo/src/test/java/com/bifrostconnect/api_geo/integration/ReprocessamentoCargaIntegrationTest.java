@@ -110,7 +110,7 @@ public class ReprocessamentoCargaIntegrationTest {
                 ("{\"type\": \"FeatureCollection\", \"features\": [], \"nonce\": " + System.currentTimeMillis() + "}").getBytes()
         );
 
-        mockMvc.perform(multipart("/api/carga/" + p.getId() + "/reprocessar")
+        mockMvc.perform(multipart("/carga/" + p.getId() + "/reprocessar")
                 .file(file))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.nomeOriginal").value("arquivo_corrigido.geojson"))

@@ -81,7 +81,7 @@ public class MapaIntegrationTest {
             arquivoProcessadoId
         );
 
-        mockMvc.perform(get("/api/publicacao/" + p.getId() + "/revisao")
+        mockMvc.perform(get("/publicacao/" + p.getId() + "/revisao")
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.resumoAuditoria").exists())
@@ -128,7 +128,7 @@ public class MapaIntegrationTest {
             arquivoProcessadoId
         );
 
-        mockMvc.perform(get("/api/mapa/camadas")
+        mockMvc.perform(get("/mapa/camadas")
                 .param("conjuntoId", "1")
                 .param("anoSafra", "2026")
                 .param("bbox", "-1,-1,3,3")

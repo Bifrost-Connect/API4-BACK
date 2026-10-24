@@ -119,7 +119,7 @@ class ArquivoControllerTest {
                 conteudoUnico.getBytes()
         );
 
-        mockMvc.perform(multipart("/api/v1/arquivos/upload")
+        mockMvc.perform(multipart("/arquivos/upload")
                         .file(file)
                         .param("processoId", processoId.toString())
                         .param("usuarioId", "1"))
@@ -394,7 +394,7 @@ class ArquivoControllerTest {
             Long arquivoProcessadoId = jdbcTemplate.queryForObject(
                     "SELECT id FROM arquivo_processado WHERE processo_id = ?", Long.class, processoId);
 
-            mockMvc.perform(get("/api/carga/{id}/calculos", processoId))
+            mockMvc.perform(get("/carga/{id}/calculos", processoId))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.processoId").value(processoId))
                     .andExpect(jsonPath("$.arquivoProcessadoId").value(arquivoProcessadoId))
@@ -422,7 +422,7 @@ class ArquivoControllerTest {
     @Test
     @DisplayName("Tarefa 13: carga inexistente => 404 com mensagem de erro")
     void deveDar404AoConsultarCalculosDeCargaInexistente() throws Exception {
-        mockMvc.perform(get("/api/carga/{id}/calculos", 999999L))
+        mockMvc.perform(get("/carga/{id}/calculos", 999999L))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.erro").exists());
     }
@@ -466,7 +466,7 @@ class ArquivoControllerTest {
             copia = Path.of(jdbcTemplate.queryForObject(
                     "SELECT url_armazenamento FROM arquivo_processado WHERE processo_id = ?", String.class, processoId));
 
-            mockMvc.perform(post("/api/analise/cruzamento")
+            mockMvc.perform(post("/analise/cruzamento")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"processoIds\":[" + processoId + "]}"))
                     .andExpect(status().isUnprocessableEntity())
@@ -482,7 +482,7 @@ class ArquivoControllerTest {
                  WHERE id = ?
                 """, processoId);
 
-            mockMvc.perform(post("/api/analise/cruzamento")
+            mockMvc.perform(post("/analise/cruzamento")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"processoIds\":[" + processoId + "],\"categorias\":[\"ALERTA\"]}"))
                     .andExpect(status().isOk())
@@ -497,7 +497,7 @@ class ArquivoControllerTest {
                     .andExpect(jsonPath("$.propriedades[0].sobreposicoes[0].codigoAlerta").value("EMB-T14"))
                     .andExpect(jsonPath("$.totaisPorCategoria.ALERTA.quantidade").value(1));
 
-            mockMvc.perform(post("/api/analise/cruzamento")
+            mockMvc.perform(post("/analise/cruzamento")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"processoIds\":[" + processoId + "],\"categorias\":[\"APP\"]}"))
                     .andExpect(status().isOk())

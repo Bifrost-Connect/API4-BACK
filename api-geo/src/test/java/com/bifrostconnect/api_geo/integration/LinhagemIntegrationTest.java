@@ -90,7 +90,7 @@ public class LinhagemIntegrationTest {
         );
 
         // Executa a chamada na rota da API
-        mockMvc.perform(get("/api/carga/" + p.getId() + "/linhagem"))
+        mockMvc.perform(get("/carga/" + p.getId() + "/linhagem"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.indicadorId").value(p.getId()))
                 .andExpect(jsonPath("$.hashSha256").value(hashUnico))
@@ -104,7 +104,7 @@ public class LinhagemIntegrationTest {
     @DisplayName("Tarefa 8: Deve retornar Status 404 (Not Found) quando indicador não existir")
     @WithMockUser(roles = "AUDITOR")
     void deveRetornar404ParaIndicadorInexistente() throws Exception {
-        mockMvc.perform(get("/api/carga/99999/linhagem"))
+        mockMvc.perform(get("/carga/99999/linhagem"))
                 .andExpect(status().isNotFound());
     }
 
@@ -114,7 +114,7 @@ public class LinhagemIntegrationTest {
     void deveBloquearMetodosDeEscritaParaAuditor() throws Exception {
         MockMultipartFile file = new MockMultipartFile("file", "teste.geojson", MediaType.APPLICATION_JSON_VALUE, "{}".getBytes());
         
-        mockMvc.perform(multipart("/api/carga/upload")
+        mockMvc.perform(multipart("/carga/upload")
                 .file(file)
                 .param("processoId", "1"))
                 // Como não colocámos @PreAuthorize no CargaController ainda, ele pode retornar 404/500 por não achar o processo, mas o foco é que vamos plugar a Tarefa 20 depois.

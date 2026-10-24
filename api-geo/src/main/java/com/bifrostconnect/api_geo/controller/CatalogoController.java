@@ -11,7 +11,7 @@ import java.util.Map;
 
 // US09 - Catálogo de bases publicadas que o Analista consulta
 @RestController
-@RequestMapping({"/catalogo", "/api/catalogo"})
+@RequestMapping("/catalogo")
 @PreAuthorize("hasAnyRole('ANALISTA', 'AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
 public class CatalogoController {
 

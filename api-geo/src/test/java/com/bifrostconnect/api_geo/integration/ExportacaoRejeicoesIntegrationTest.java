@@ -60,7 +60,7 @@ public class ExportacaoRejeicoesIntegrationTest {
         );
 
         // 3. Executa a requisição GET na rota de exportação CSV
-        mockMvc.perform(get("/api/carga/" + p.getId() + "/rejeicoes/exportar"))
+        mockMvc.perform(get("/carga/" + p.getId() + "/rejeicoes/exportar"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType("text/csv;charset=UTF-8"))
                 // Valida que o Content-Disposition contém o nome gerado pelo Spring
@@ -73,7 +73,7 @@ public class ExportacaoRejeicoesIntegrationTest {
     @DisplayName("Tarefa 16: Deve retornar 404 Not Found se o processo não tiver rejeições")
     @WithMockUser(roles = "AUDITOR")
     void deveRetornar404QuandoNaoHouverRejeicoes() throws Exception {
-        mockMvc.perform(get("/api/carga/99999/rejeicoes/exportar"))
+        mockMvc.perform(get("/carga/99999/rejeicoes/exportar"))
                 .andExpect(status().isNotFound());
     }
 }
