@@ -354,7 +354,7 @@ class ArquivoControllerTest {
     }
 
     @Test
-    @DisplayName("Tarefa 13: GET /api/cargas/{id}/calculos devolve área total, área por polígono, interseções e alertas do Tratamento")
+    @DisplayName("Tarefa 13: GET /carga/{id}/calculos devolve área total, área por polígono, interseções e alertas do Tratamento")
     void deveConsultarCalculosDaCarga() throws Exception {
         Path arquivo = Files.createTempFile("calculos_carga", ".geojson");
         Path copia = null;
@@ -428,7 +428,7 @@ class ArquivoControllerTest {
     }
 
     @Test
-    @DisplayName("Tarefa 14: POST /api/analise/cruzamento lista as propriedades e hectares afetados das bases publicadas")
+    @DisplayName("Tarefa 14: POST /analise/cruzamento lista as propriedades e hectares afetados das bases publicadas")
     void deveCruzarBasesPublicadas() throws Exception {
         Path arquivo = Files.createTempFile("cruzamento_analise", ".geojson");
         Path copia = null;

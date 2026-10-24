@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-// US09 - Tarefas 7 e 8: catálogo de bases do Analista (GET /api/catalogo/bases).
+// US09 - Tarefas 7 e 8: catálogo de bases do Analista (GET /catalogo/bases).
 // Roda contra o banco local, com a V22 (versao_fechada / historico_aprovacoes_gestor) aplicada.
 @SpringBootTest
 class CatalogoBasesIntegrationTest {

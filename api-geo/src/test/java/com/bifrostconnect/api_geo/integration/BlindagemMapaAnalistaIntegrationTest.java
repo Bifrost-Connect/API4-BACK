@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // US08 - Tarefa 19: carga em Tratamento e carga em Quarentena não podem aparecer
-// no mapa do Analista (GET /api/mapa/camadas). Roda contra o banco local, com as
+// no mapa do Analista (GET /mapa/camadas). Roda contra o banco local, com as
 // migrations da V22 (versao_fechada / historico_aprovacoes_gestor) aplicadas.
 @SpringBootTest
 class BlindagemMapaAnalistaIntegrationTest {
