@@ -42,12 +42,12 @@ public class LinhagemService {
         for (int i = 0; i < todosArquivos.size(); i++) {
             ArquivoOriginal arq = todosArquivos.get(i);
             String usuarioNome = null;
-            if (arq.getUsuarioId() != null) {
+            if (arq.getUsuarioUploadId() != null) {
                 try {
                     usuarioNome = jdbcTemplate.queryForObject(
                             "SELECT nome FROM usuario WHERE id = ?",
                             String.class,
-                            arq.getUsuarioId()
+                            arq.getUsuarioUploadId()
                     );
                 } catch (Exception ignored) {}
             }
@@ -55,9 +55,9 @@ public class LinhagemService {
                     .id(arq.getId())
                     .nomeArquivo(arq.getNomeOriginal())
                     .hashSha256(arq.getHashSha256())
-                    .dataUpload(arq.getDataCriacao())
+                    .dataUpload(arq.getDataUpload())
                     .tamanhoBytes(arq.getTamanhoBytes())
-                    .usuarioId(arq.getUsuarioId())
+                    .usuarioId(arq.getUsuarioUploadId())
                     .usuarioNome(usuarioNome)
                     .tentativa(i + 1)
                     .build());
