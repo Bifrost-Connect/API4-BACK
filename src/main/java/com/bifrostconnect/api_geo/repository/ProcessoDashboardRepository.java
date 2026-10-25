@@ -275,13 +275,13 @@ public class ProcessoDashboardRepository {
     private List<Map<String, Object>> buscarOcorrenciasValidacao(Long processoId) {
         List<Map<String, Object>> list = new ArrayList<>();
 
-        // 1. Ocorrências registradas em ocorrencia_validacao
+        // 1. Ocorrências ativas registradas em ocorrencia_validacao (apenas status PENDENTE do ciclo atual)
         String sqlOcorrencias = """
                 SELECT ov.id, r.nome AS regra, ov.mensagem, ov.severidade, ov.data_deteccao, ov.contexto
                 FROM ocorrencia_validacao ov
                 JOIN processo_etapa pe ON pe.id = ov.processo_etapa_id
                 JOIN regra_validacao r ON r.id = ov.regra_id
-                WHERE pe.processo_id = :processoId
+                WHERE pe.processo_id = :processoId AND ov.status = 'PENDENTE'
                 ORDER BY ov.data_deteccao DESC
                 """;
         try {
@@ -308,7 +308,9 @@ public class ProcessoDashboardRepository {
         String sqlLogs = """
                 SELECT lv.id, COALESCE(lv.identificador_feicao, 'Quarentena') AS regra, lv.mensagem, lv.severidade, lv.data_deteccao, COALESCE(lv.motivo_invalidez, 'Falha de validação') AS contexto
                 FROM log_validacao lv
+                LEFT JOIN ocorrencia_validacao ov ON ov.id = lv.ocorrencia_validacao_id
                 WHERE lv.processo_id = :processoId
+                  AND (ov.id IS NULL OR ov.status = 'PENDENTE')
                 ORDER BY lv.data_deteccao DESC
                 """;
         try {
