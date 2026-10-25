@@ -134,12 +134,37 @@ public class ProcessoController {
     @PostMapping("/{id}/processar")
     public ResponseEntity<?> processarProcesso(
             @PathVariable Long id,
-            @RequestParam String nomeArquivo,
+            @RequestParam(required = false) String nomeArquivo,
             @RequestParam(
                     required = false,
                     defaultValue = "1"
             ) Long usuarioId) {
 
+        try {
+            processoService.buscarPorId(id);
+            processoService.processarArquivoAsync(id, usuarioId);
+
+            return ResponseEntity.accepted().body(java.util.Map.of(
+                    "mensagem", "Processamento da carga iniciado com sucesso em segundo plano.",
+                    "processoId", id,
+                    "status", "EM_ANDAMENTO"
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity
+                    .internalServerError()
+                    .body("Erro ao despachar processamento em segundo plano: " + e.getMessage());
+        }
+    }
+
+    // Método síncrono mantido para compatibilidade interna
+    public ResponseEntity<?> processarProcessoSincrono(
+            Long id,
+            String nomeArquivo,
+            Long usuarioId) {
         try {
 
             Processo processo =

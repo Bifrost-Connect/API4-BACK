@@ -40,6 +40,7 @@ import com.bifrostconnect.api_geo.service.EncaminhamentoQuarentenaService;
 import com.bifrostconnect.api_geo.service.GestorDecisaoService;
 import com.bifrostconnect.api_geo.service.LinhagemService;
 import com.bifrostconnect.api_geo.service.MetadadosCargaService;
+import com.bifrostconnect.api_geo.service.ProcessoService;
 import com.bifrostconnect.api_geo.service.ReprocessamentoCargaService;
 import com.bifrostconnect.api_geo.service.ExportacaoRejeicoesService;
 
@@ -60,6 +61,7 @@ public class CargaController {
     private final CancelamentoCargaService cancelamentoCargaService;
     private final GestorDecisaoService gestorDecisaoService;
     private final CargaCamadaReferenciaService cargaCamadaReferenciaService;
+    private final ProcessoService processoService;
     
     // Construtor unificado corrigido
     public CargaController(
@@ -73,7 +75,8 @@ public class CargaController {
             ReprocessamentoCargaService reprocessamentoCargaService,
             CancelamentoCargaService cancelamentoCargaService,
             GestorDecisaoService gestorDecisaoService,
-            CargaCamadaReferenciaService cargaCamadaReferenciaService) {
+            CargaCamadaReferenciaService cargaCamadaReferenciaService,
+            ProcessoService processoService) {
 
         this.metadadosCargaService = metadadosCargaService;
         this.arquivoUploadService = arquivoUploadService;
@@ -86,6 +89,7 @@ public class CargaController {
         this.cancelamentoCargaService = cancelamentoCargaService;
         this.gestorDecisaoService = gestorDecisaoService;
         this.cargaCamadaReferenciaService = cargaCamadaReferenciaService;
+        this.processoService = processoService;
     }
 
     @GetMapping("/{id}/calculos")
@@ -162,6 +166,9 @@ public class CargaController {
                             + ", Arquivo: "
                             + nomeArquivo
             );
+
+            // Inicia o processamento geoespacial em background assíncrono (sem travar a tela de upload)
+            processoService.processarArquivoAsync(processoId, usuarioId);
 
             return ResponseEntity
                     .status(HttpStatus.CREATED)
@@ -317,8 +324,9 @@ public class CargaController {
         }
 
         try {
-                ArquivoOriginal arquivoNovo = reprocessamentoCargaService.reprocessarCarga(id, file, usuarioId);
-                return ResponseEntity.status(HttpStatus.CREATED).body(arquivoNovo);
+            ArquivoOriginal arquivoNovo = reprocessamentoCargaService.reprocessarCarga(id, file, usuarioId);
+            processoService.processarArquivoAsync(id, usuarioId);
+            return ResponseEntity.status(HttpStatus.CREATED).body(arquivoNovo);
 
         } catch (IllegalArgumentException e) {
                 return ResponseEntity.badRequest().body(e.getMessage());

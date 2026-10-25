@@ -3,22 +3,27 @@ package com.bifrostconnect.api_geo.service;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.bifrostconnect.api_geo.dto.ResultadoCalculoAnalitico;
 import com.bifrostconnect.api_geo.dto.ResultadoValidacaoTopologica;
+import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
 import com.bifrostconnect.api_geo.entity.ArquivoProcessado;
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.exception.FalhaGeoespacialException;
+import com.bifrostconnect.api_geo.repository.ArquivoOriginalRepository;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
 
 @Service
@@ -36,6 +41,7 @@ public class ProcessoService {
     private final CalculoAnaliticoService calculoAnaliticoService;
     private final NotificacaoService notificacaoService;
     private final JdbcTemplate jdbcTemplate;
+    private final ArquivoOriginalRepository arquivoOriginalRepository;
 
     public ProcessoService(
             ProcessoRepository processoRepository,
@@ -49,7 +55,8 @@ public class ProcessoService {
             ValidacaoTopologicaService validacaoTopologicaService,
             CalculoAnaliticoService calculoAnaliticoService,
             NotificacaoService notificacaoService,
-            JdbcTemplate jdbcTemplate
+            JdbcTemplate jdbcTemplate,
+            ArquivoOriginalRepository arquivoOriginalRepository
         ) {
 
         this.processoRepository = processoRepository;
@@ -64,6 +71,7 @@ public class ProcessoService {
         this.calculoAnaliticoService = calculoAnaliticoService;
         this.notificacaoService = notificacaoService;
         this.jdbcTemplate = jdbcTemplate;
+        this.arquivoOriginalRepository = arquivoOriginalRepository;
     }
 
     public Processo buscarPorId(Long id) {
@@ -106,6 +114,38 @@ public class ProcessoService {
         return salvarGarantindoCampos(processo);
     }
 
+    /**
+     * Executa a esteira geoespacial de processamento de forma assíncrona em segundo plano,
+     * liberando a thread HTTP e a interface de upload para resposta imediata.
+     */
+    @Async
+    public CompletableFuture<Processo> processarArquivoAsync(Long processoId, Long usuarioId) {
+        try {
+            Processo processo = buscarPorId(processoId);
+            ArquivoOriginal arquivo = arquivoOriginalRepository
+                    .findFirstByProcessoIdOrderByIdDesc(processoId)
+                    .orElse(null);
+
+            if (arquivo == null || arquivo.getUrlArmazenamento() == null) {
+                auditoriaLogService.registrarLog(processo, "ERROR", "Arquivo físico não encontrado para processamento assíncrono.");
+                return CompletableFuture.completedFuture(processo);
+            }
+
+            Path caminhoArquivo = Paths.get(arquivo.getUrlArmazenamento());
+            Processo resultado = processarArquivo(processo, arquivo.getNomeOriginal(), caminhoArquivo, usuarioId);
+            return CompletableFuture.completedFuture(resultado);
+        } catch (FalhaGeoespacialException e) {
+            // A carga já foi devidamente encaminhada para a Quarentena pelo processarArquivo
+            return CompletableFuture.completedFuture(null);
+        } catch (Exception e) {
+            try {
+                Processo p = buscarPorId(processoId);
+                processoEstadoService.atualizarEstado(p, "VALIDACAO", "FALHOU", "Erro no processamento em segundo plano: " + e.getMessage());
+                auditoriaLogService.registrarLog(p, "ERROR", "Falha no processamento em segundo plano: " + e.getMessage());
+            } catch (Exception ignored) {}
+            return CompletableFuture.completedFuture(null);
+        }
+    }
 
     // noRollbackFor: quando a etapa termina em falha controlada (422/415) o log de erro, a
     // auditoria e o EPSG detectado já gravados NÃO podem ser desfeitos pelo rollback - senão

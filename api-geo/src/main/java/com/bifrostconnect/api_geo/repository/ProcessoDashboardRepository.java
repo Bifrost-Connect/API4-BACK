@@ -195,8 +195,10 @@ public class ProcessoDashboardRepository {
         Boolean versaoFechada = resultado[18] != null && Boolean.parseBoolean(resultado[18].toString());
         String versaoOficial = resultado[19] != null ? resultado[19].toString() : null;
 
+        String situacaoAtual = resultado[3] != null ? resultado[3].toString() : null;
+
         List<Map<String, Object>> ocorrencias = buscarOcorrenciasValidacao(processoId);
-        List<Object> validationChecks = montarValidationChecks(ocorrencias);
+        List<Object> validationChecks = montarValidationChecks(ocorrencias, situacaoAtual);
         List<Object> treatmentChecks = montarTreatmentChecks(epsgDeclarado, epsgDetectado);
         List<Object> analyticsData = montarAnalyticsData(processoId);
         List<List<Double>> mapCoords = buscarBoundingBox(processoId);
@@ -271,7 +273,10 @@ public class ProcessoDashboardRepository {
     }
 
     private List<Map<String, Object>> buscarOcorrenciasValidacao(Long processoId) {
-        String sql = """
+        List<Map<String, Object>> list = new ArrayList<>();
+
+        // 1. Ocorrências registradas em ocorrencia_validacao
+        String sqlOcorrencias = """
                 SELECT ov.id, r.nome AS regra, ov.mensagem, ov.severidade, ov.data_deteccao, ov.contexto
                 FROM ocorrencia_validacao ov
                 JOIN processo_etapa pe ON pe.id = ov.processo_etapa_id
@@ -280,11 +285,10 @@ public class ProcessoDashboardRepository {
                 ORDER BY ov.data_deteccao DESC
                 """;
         try {
-            Query q = entityManager.createNativeQuery(sql);
+            Query q = entityManager.createNativeQuery(sqlOcorrencias);
             q.setParameter("processoId", processoId);
             @SuppressWarnings("unchecked")
             List<Object[]> rows = q.getResultList();
-            List<Map<String, Object>> list = new ArrayList<>();
             for (Object[] r : rows) {
                 Map<String, Object> map = new LinkedHashMap<>();
                 map.put("recordId", r[0] != null ? r[0].toString() : "");
@@ -298,25 +302,65 @@ public class ProcessoDashboardRepository {
                 map.put("valorEsperado", "Conforme Regras PostGIS");
                 list.add(map);
             }
-            return list;
-        } catch (Exception e) {
-            return new ArrayList<>();
-        }
+        } catch (Exception ignored) {}
+
+        // 2. Logs de falha de validação e quarentena da tabela log_validacao
+        String sqlLogs = """
+                SELECT lv.id, COALESCE(lv.identificador_feicao, 'Quarentena') AS regra, lv.mensagem, lv.severidade, lv.data_deteccao, COALESCE(lv.motivo_invalidez, 'Falha de validação') AS contexto
+                FROM log_validacao lv
+                WHERE lv.processo_id = :processoId
+                ORDER BY lv.data_deteccao DESC
+                """;
+        try {
+            Query q2 = entityManager.createNativeQuery(sqlLogs);
+            q2.setParameter("processoId", processoId);
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows2 = q2.getResultList();
+            for (Object[] r : rows2) {
+                String recordId = r[0] != null ? "LOG-" + r[0].toString() : "";
+                boolean jaExiste = list.stream().anyMatch(m -> recordId.equals(m.get("recordId")));
+                if (!jaExiste) {
+                    Map<String, Object> map = new LinkedHashMap<>();
+                    map.put("recordId", recordId);
+                    map.put("motivo", r[2] != null ? r[2].toString() : "Retido em Quarentena");
+                    map.put("etapaOrigem", "Quarentena");
+                    map.put("execucaoId", processoId.toString());
+                    LocalDateTime dt = toLocalDateTime(r[4]);
+                    map.put("dataRejeicao", dt != null ? dt.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) : "");
+                    map.put("campo", "Geometria");
+                    map.put("valorEncontrado", r[5] != null ? r[5].toString() : "Inconsistência na esteira");
+                    map.put("valorEsperado", "Regras de Validação Satisfeitas");
+                    list.add(map);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return list;
     }
 
-    private List<Object> montarValidationChecks(List<Map<String, Object>> ocorrencias) {
+    private List<Object> montarValidationChecks(List<Map<String, Object>> ocorrencias, String situacaoAtual) {
         List<Object> checks = new ArrayList<>();
-        boolean hasInvalidGeom = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("GEOMETRIA"));
-        boolean hasDuplicateCar = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("CAR"));
-        boolean hasDuplicatePoly = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("POLIGONO_DUPLICADO"));
-        boolean hasOverlap = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("SOBREPOSICAO"));
+        boolean emQuarentena = "EM_VALIDACAO".equalsIgnoreCase(situacaoAtual) || "EM_QUARENTENA".equalsIgnoreCase(situacaoAtual);
+        boolean hasInvalidGeom = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("GEOMETRIA") || String.valueOf(o.get("motivo")).toUpperCase().contains("GEOMETRIA") || String.valueOf(o.get("motivo")).toUpperCase().contains("INVÁLID"));
+        boolean hasDuplicateCar = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("CAR") || String.valueOf(o.get("motivo")).toUpperCase().contains("CÓDIGO") || String.valueOf(o.get("motivo")).toUpperCase().contains("IMOVEL"));
+        boolean hasDuplicatePoly = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("POLIGONO_DUPLICADO") || String.valueOf(o.get("motivo")).toUpperCase().contains("DUPLICAD"));
+        boolean hasOverlap = ocorrencias.stream().anyMatch(o -> String.valueOf(o.get("campo")).contains("SOBREPOSICAO") || String.valueOf(o.get("motivo")).toUpperCase().contains("SOBREPOSI"));
+
+        // Se está em quarentena mas nenhum check específico foi identificado, marca a integridade geral como erro com motivo
+        if (emQuarentena && !hasInvalidGeom && !hasDuplicateCar && !hasDuplicatePoly && !hasOverlap) {
+            hasInvalidGeom = true;
+        }
+
+        String invalidDetail = hasInvalidGeom && emQuarentena && !ocorrencias.isEmpty()
+                ? String.valueOf(ocorrencias.get(0).get("motivo"))
+                : (hasInvalidGeom ? "Geometrias inválidas detectadas pelo PostGIS" : "Polígonos 2D válidos e fechados");
 
         checks.add(Map.of(
             "id", "val-1",
             "label", "Integridade da Geometria PostGIS",
             "description", "Verifica se todos os anéis são fechados e passam em ST_IsValid",
             "status", hasInvalidGeom ? "error" : "success",
-            "detail", hasInvalidGeom ? "Geometrias inválidas detectadas pelo PostGIS" : "Polígonos 2D válidos e fechados"
+            "detail", invalidDetail
         ));
         checks.add(Map.of(
             "id", "val-2",
