@@ -262,7 +262,7 @@ public class CargaController {
     // ==========================================
     // Tarefa 16: API de Exportação de Rejeições (CSV)
     // ==========================================
-    @GetMapping("/{id}/rejeicoes/exportar")
+    @GetMapping({"/{id}/rejeicoes/exportar", "/{id}/quarentena/exportar"})
     public ResponseEntity<byte[]> exportarRejeicoesEmCsv(@PathVariable Long id) {
         try {
             byte[] csvData = exportacaoRejeicoesService.exportarRejeicoesCsv(id);

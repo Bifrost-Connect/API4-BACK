@@ -21,6 +21,45 @@ public class LinhagemResponseDTO {
     private String etapaAtual;
     private List<HistoricoEtapaDTO> historicoEtapas;
     private List<LogQuarentenaDTO> logsQuarentena;
+    private List<ArquivoLinhagemDTO> arquivos;
+    private List<DecisaoGestorDTO> decisoesGestor;
+    private List<EventoAuditoriaDTO> eventosAuditoria;
+
+    @Data
+    @Builder
+    public static class ArquivoLinhagemDTO {
+        private Long id;
+        private String nomeArquivo;
+        private String hashSha256;
+        private LocalDateTime dataUpload;
+        private Long tamanhoBytes;
+        private Long usuarioId;
+        private String usuarioNome;
+        private Integer tentativa;
+    }
+
+    @Data
+    @Builder
+    public static class DecisaoGestorDTO {
+        private Long id;
+        private Long gestorId;
+        private String gestorNome;
+        private String etapa;
+        private String decisao;
+        private String parecer;
+        private LocalDateTime dataDecisao;
+    }
+
+    @Data
+    @Builder
+    public static class EventoAuditoriaDTO {
+        private Long id;
+        private Long usuarioId;
+        private String usuarioNome;
+        private String acao;
+        private String detalhes;
+        private LocalDateTime dataHora;
+    }
 
     @Data
     @Builder

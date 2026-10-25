@@ -31,9 +31,39 @@ public class LinhagemService {
         Processo processo = processoRepository.findById(indicadorId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Indicador/Processo não encontrado."));
 
-        // Busca o arquivo original atrelado ao processo para recuperar o Hash (Tarefa 6 e 9)
-        ArquivoOriginal arquivo = arquivoOriginalRepository.findByProcessoId(processo.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo original da linhagem não encontrado."));
+        // Busca todos os arquivos atrelados ao processo (upload original e reprocessamentos - Tarefas 15 e 18)
+        List<ArquivoOriginal> todosArquivos = arquivoOriginalRepository.findAllByProcessoIdOrderByIdAsc(processo.getId());
+        if (todosArquivos.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Arquivo original da linhagem não encontrado.");
+        }
+
+        // Mapeia lista detalhada de arquivos/tentativas da linhagem
+        List<LinhagemResponseDTO.ArquivoLinhagemDTO> arquivosDTO = new java.util.ArrayList<>();
+        for (int i = 0; i < todosArquivos.size(); i++) {
+            ArquivoOriginal arq = todosArquivos.get(i);
+            String usuarioNome = null;
+            if (arq.getUsuarioId() != null) {
+                try {
+                    usuarioNome = jdbcTemplate.queryForObject(
+                            "SELECT nome FROM usuario WHERE id = ?",
+                            String.class,
+                            arq.getUsuarioId()
+                    );
+                } catch (Exception ignored) {}
+            }
+            arquivosDTO.add(LinhagemResponseDTO.ArquivoLinhagemDTO.builder()
+                    .id(arq.getId())
+                    .nomeArquivo(arq.getNomeOriginal())
+                    .hashSha256(arq.getHashSha256())
+                    .dataUpload(arq.getDataCriacao())
+                    .tamanhoBytes(arq.getTamanhoBytes())
+                    .usuarioId(arq.getUsuarioId())
+                    .usuarioNome(usuarioNome)
+                    .tentativa(i + 1)
+                    .build());
+        }
+
+        ArquivoOriginal arquivoMaisRecente = todosArquivos.get(todosArquivos.size() - 1);
 
         // Busca os Logs de Quarentena gerados na Tarefa 14
         List<LogValidacao> logs = logValidacaoRepository.findByProcessoId(processo.getId());
@@ -78,18 +108,61 @@ public class LinhagemService {
                 .build()
         ).toList();
 
+        // Busca histórico de aprovações/decisões do gestor (Tarefa 15)
+        String sqlDecisoes = """
+            SELECT h.id, h.gestor_id, u.nome as gestor_nome, h.etapa_avaliada, h.decisao,
+                   h.parecer_justificativa, h.data_decisao
+            FROM historico_aprovacoes_gestor h
+            LEFT JOIN usuario u ON u.id = h.gestor_id
+            WHERE h.processo_id = ?
+            ORDER BY h.data_decisao ASC
+            """;
+        List<LinhagemResponseDTO.DecisaoGestorDTO> decisoesDTO = jdbcTemplate.query(sqlDecisoes, (rs, rowNum) ->
+            LinhagemResponseDTO.DecisaoGestorDTO.builder()
+                .id(rs.getLong("id"))
+                .gestorId(rs.getLong("gestor_id"))
+                .gestorNome(rs.getString("gestor_nome"))
+                .etapa(rs.getString("etapa_avaliada"))
+                .decisao(rs.getString("decisao"))
+                .parecer(rs.getString("parecer_justificativa"))
+                .dataDecisao(rs.getTimestamp("data_decisao") != null ? rs.getTimestamp("data_decisao").toLocalDateTime() : null)
+                .build()
+        , processo.getId());
+
+        // Busca eventos de auditoria registrados (Tarefa 15: quem aprovou/reprovou, notificou operador, etc.)
+        String sqlAuditoria = """
+            SELECT a.id, a.usuario_id, u.nome as usuario_nome, a.acao, a.detalhes, a.data_hora
+            FROM auditoria a
+            LEFT JOIN usuario u ON u.id = a.usuario_id
+            WHERE a.processo_id = ?
+            ORDER BY a.data_hora ASC
+            """;
+        List<LinhagemResponseDTO.EventoAuditoriaDTO> eventosDTO = jdbcTemplate.query(sqlAuditoria, (rs, rowNum) ->
+            LinhagemResponseDTO.EventoAuditoriaDTO.builder()
+                .id(rs.getLong("id"))
+                .usuarioId(rs.getLong("usuario_id"))
+                .usuarioNome(rs.getString("usuario_nome"))
+                .acao(rs.getString("acao"))
+                .detalhes(rs.getString("detalhes"))
+                .dataHora(rs.getTimestamp("data_hora") != null ? rs.getTimestamp("data_hora").toLocalDateTime() : null)
+                .build()
+        , processo.getId());
+
         return LinhagemResponseDTO.builder()
                 .indicadorId(processo.getId())
                 .processoId(processo.getId())
-                .arquivoOriginalId(arquivo.getId())
-                .nomeArquivoOriginal(arquivo.getNomeOriginal())
-                .hashSha256(arquivo.getHashSha256())
+                .arquivoOriginalId(arquivoMaisRecente.getId())
+                .nomeArquivoOriginal(arquivoMaisRecente.getNomeOriginal())
+                .hashSha256(arquivoMaisRecente.getHashSha256())
                 .parametrosProcessamento("Validação Espacial, Regras de Negócio Padrão")
                 .dataCarga(processo.getDataCriacao())
-                .statusAtual(nomeSituacaoAtual) // Corrigido aqui
-                .etapaAtual(nomeEtapaAtual)     // Corrigido aqui
+                .statusAtual(nomeSituacaoAtual)
+                .etapaAtual(nomeEtapaAtual)
                 .historicoEtapas(historico)
                 .logsQuarentena(logsDTO)
+                .arquivos(arquivosDTO)
+                .decisoesGestor(decisoesDTO)
+                .eventosAuditoria(eventosDTO)
                 .build();
     }
 }

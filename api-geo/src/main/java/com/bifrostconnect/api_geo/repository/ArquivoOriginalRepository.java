@@ -1,5 +1,6 @@
 package com.bifrostconnect.api_geo.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,4 +14,6 @@ public interface ArquivoOriginalRepository extends JpaRepository<ArquivoOriginal
     Optional<ArquivoOriginal> findFirstByProcessoIdOrderByIdDesc(Long processoId);
 
     Optional<ArquivoOriginal> findByProcessoId(Long processoId);
+
+    List<ArquivoOriginal> findAllByProcessoIdOrderByIdAsc(Long processoId);
 }
