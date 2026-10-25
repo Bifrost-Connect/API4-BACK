@@ -28,6 +28,7 @@ class GestorDecisaoServiceTest {
     private ProcessoEstadoService processoEstadoService;
     private AuditoriaLogService auditoriaLogService;
     private NotificacaoService notificacaoService;
+    private ConsolidacaoPublicacaoService consolidacaoPublicacaoService;
     private JdbcTemplate jdbcTemplate;
     private GestorDecisaoService service;
 
@@ -37,6 +38,7 @@ class GestorDecisaoServiceTest {
         processoEstadoService = mock(ProcessoEstadoService.class);
         auditoriaLogService = mock(AuditoriaLogService.class);
         notificacaoService = mock(NotificacaoService.class);
+        consolidacaoPublicacaoService = mock(ConsolidacaoPublicacaoService.class);
         jdbcTemplate = mock(JdbcTemplate.class);
 
         service = new GestorDecisaoService(
@@ -44,6 +46,7 @@ class GestorDecisaoServiceTest {
                 processoEstadoService,
                 auditoriaLogService,
                 notificacaoService,
+                consolidacaoPublicacaoService,
                 jdbcTemplate);
     }
 
