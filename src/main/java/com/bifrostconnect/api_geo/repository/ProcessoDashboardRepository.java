@@ -281,7 +281,13 @@ public class ProcessoDashboardRepository {
                 FROM ocorrencia_validacao ov
                 JOIN processo_etapa pe ON pe.id = ov.processo_etapa_id
                 JOIN regra_validacao r ON r.id = ov.regra_id
-                WHERE pe.processo_id = :processoId AND ov.status = 'PENDENTE'
+                WHERE pe.processo_id = :processoId
+                  AND ov.status = 'PENDENTE'
+                  AND ov.data_deteccao >= (
+                      SELECT COALESCE(MAX(ao.data_upload) - INTERVAL '5 seconds', '1970-01-01'::timestamp)
+                      FROM arquivo_original ao
+                      WHERE ao.processo_id = :processoId
+                  )
                 ORDER BY ov.data_deteccao DESC
                 """;
         try {
@@ -311,6 +317,11 @@ public class ProcessoDashboardRepository {
                 LEFT JOIN ocorrencia_validacao ov ON ov.id = lv.ocorrencia_validacao_id
                 WHERE lv.processo_id = :processoId
                   AND (ov.id IS NULL OR ov.status = 'PENDENTE')
+                  AND lv.data_deteccao >= (
+                      SELECT COALESCE(MAX(ao.data_upload) - INTERVAL '5 seconds', '1970-01-01'::timestamp)
+                      FROM arquivo_original ao
+                      WHERE ao.processo_id = :processoId
+                  )
                 ORDER BY lv.data_deteccao DESC
                 """;
         try {
