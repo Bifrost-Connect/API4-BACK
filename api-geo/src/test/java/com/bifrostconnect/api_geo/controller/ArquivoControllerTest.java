@@ -293,9 +293,9 @@ class ArquivoControllerTest {
     }
 
     @Test
-    @DisplayName("Tarefa 12: polígonos sobrepostos => Tratamento interrompido e carga na Quarentena (TRATAMENTO / EM_VALIDACAO)")
+    @DisplayName("Tarefa 12: polígonos sobrepostos => Validação interrompida e carga na Quarentena (VALIDACAO / EM_VALIDACAO)")
     void deveMandarParaQuarentenaQuandoPoligonosSeSobrepoem() throws Exception {
-        Long etapaTratamento = 2L;
+        Long etapaValidacao = 3L;
         Long situacaoEmValidacao = 2L;
 
         Path arquivo = Files.createTempFile("sobreposicao", ".geojson");
@@ -325,7 +325,7 @@ class ArquivoControllerTest {
             Processo resultado = processoService.processarArquivo(
                     processo, "sobreposicao.geojson", arquivo, 1L);
 
-            assertEquals(etapaTratamento, resultado.getEtapaAtualId());
+            assertEquals(etapaValidacao, resultado.getEtapaAtualId());
             assertEquals(situacaoEmValidacao, resultado.getSituacaoAtualId());
             assertEquals(situacaoEmValidacao, jdbcTemplate.queryForObject(
                     "SELECT situacao_atual_id FROM processo WHERE id = ?", Long.class, processoId));

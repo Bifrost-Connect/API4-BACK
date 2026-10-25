@@ -87,13 +87,13 @@ class ExcecaoGeoespacialIntegrationTest {
                 .andExpect(jsonPath("$.quarentena").value(true))
                 .andExpect(jsonPath("$.operacao").value("conversão de coordenadas EPSG:5880 -> EPSG:4674"));
 
-        // carga parada na Quarentena do Tratamento (TRATAMENTO / EM_VALIDACAO)
+        // carga parada na Quarentena da Validação (VALIDACAO / EM_VALIDACAO)
         Map<String, Object> estado = jdbc.queryForMap(
                 "SELECT e.nome AS etapa, s.nome AS situacao FROM processo p "
                         + "JOIN etapa e ON e.id = p.etapa_atual_id "
                         + "JOIN situacao s ON s.id = p.situacao_atual_id WHERE p.id = ?",
                 processoId);
-        assertThat(estado.get("etapa")).isEqualTo("TRATAMENTO");
+        assertThat(estado.get("etapa")).isEqualTo("VALIDACAO");
         assertThat(estado.get("situacao")).isEqualTo("EM_VALIDACAO");
 
         // log da Quarentena com o código e o erro que veio do PostGIS
