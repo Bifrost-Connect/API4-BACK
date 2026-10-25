@@ -67,9 +67,7 @@ public class CamadasMapaService {
             filtroParams.add(processoId);
         } else {
             filtros.append("""
-                  AND e.nome = 'PUBLICACAO'
-                  AND s.nome = 'CONCLUIDA'
-                  AND p.versao_fechada = TRUE
+                  AND (p.versao_fechada = TRUE OR (e.nome = 'PUBLICACAO' AND s.nome = 'CONCLUIDA'))
                 """);
         }
 
@@ -89,11 +87,17 @@ public class CamadasMapaService {
                          fc.codigo_imovel ILIKE ?
                          OR p.ano_safra ILIKE ?
                          OR CAST(p.id AS TEXT) ILIKE ?
+                         OR c.nome ILIKE ?
+                         OR o.nome ILIKE ?
+                         OR o.sigla ILIKE ?
                      )
                     """);
 
             String termo = "%" + busca.trim() + "%";
 
+            filtroParams.add(termo);
+            filtroParams.add(termo);
+            filtroParams.add(termo);
             filtroParams.add(termo);
             filtroParams.add(termo);
             filtroParams.add(termo);
@@ -174,6 +178,10 @@ public class CamadasMapaService {
                     ON e.id = p.etapa_atual_id
                 JOIN situacao s
                     ON s.id = p.situacao_atual_id
+                LEFT JOIN conjunto c
+                    ON c.id = p.conjunto_id
+                LEFT JOIN orgao o
+                    ON o.id = p.orgao_id
                 """;
 
         Long total = jdbcTemplate.queryForObject(
@@ -201,7 +209,10 @@ public class CamadasMapaService {
                                     'processoId', resultado.processo_id,
                                     'codigoImovel', resultado.codigo_imovel,
                                     'anoSafra', resultado.ano_safra,
-                                    'areaHectares', resultado.area_hectares
+                                    'areaHectares', resultado.area_hectares,
+                                    'name', resultado.base_nome,
+                                    'category', resultado.base_nome,
+                                    'source', resultado.orgao_nome
                                 )
                             )
                             ORDER BY resultado.id
@@ -216,6 +227,8 @@ public class CamadasMapaService {
                         fc.codigo_imovel,
                         p.id AS processo_id,
                         p.ano_safra,
+                        COALESCE(c.nome, o.nome, 'Carga #' || p.id) AS base_nome,
+                        COALESCE(o.nome, o.sigla, 'Fonte Oficial') AS orgao_nome,
                         ROUND((ST_Area(fc.geom::geography) / 10000)::numeric, 4) AS area_hectares
                 """ + from + filtros + """
                     ORDER BY fc.id
