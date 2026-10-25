@@ -1,1 +1,0 @@
-{"crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::4674"}},"type":"FeatureCollection","features":[{"type":"Feature","properties":{"nome":"Teste"},"geometry":{"type":"Polygon","coordinates":[[[-46.633308,-23.55052],[-46.633308,-23.55152],[-46.632308,-23.55152],[-46.632308,-23.55052],[-46.633308,-23.55052]]]}}]}
