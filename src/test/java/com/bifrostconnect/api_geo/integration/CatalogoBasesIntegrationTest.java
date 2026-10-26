@@ -19,9 +19,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.springframework.transaction.annotation.Transactional;
+
 // US09 - Tarefas 7 e 8: catálogo de bases do Analista (GET /catalogo/bases).
 // Roda contra o banco local, com a V22 (versao_fechada / historico_aprovacoes_gestor) aplicada.
 @SpringBootTest
+@Transactional
 class CatalogoBasesIntegrationTest {
 
     @Autowired

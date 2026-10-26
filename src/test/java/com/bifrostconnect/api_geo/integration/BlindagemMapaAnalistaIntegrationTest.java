@@ -18,10 +18,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.springframework.transaction.annotation.Transactional;
+
 // US08 - Tarefa 19: carga em Tratamento e carga em Quarentena não podem aparecer
 // no mapa do Analista (GET /mapa/camadas). Roda contra o banco local, com as
 // migrations da V22 (versao_fechada / historico_aprovacoes_gestor) aplicadas.
 @SpringBootTest
+@Transactional
 class BlindagemMapaAnalistaIntegrationTest {
 
     // recorte isolado, longe de qualquer dado real, pra consulta não puxar o banco inteiro
