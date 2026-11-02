@@ -4,6 +4,14 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+# Arquivos de Ambiente (.env)
+.env
+.env.*
+*.env
+executavel/.env
+!.env.example
+!executavel/.env.example
+
 ### STS ###
 .apt_generated
 .classpath
@@ -14,10 +22,11 @@ target/
 .sts4-cache
 
 ### IntelliJ IDEA ###
-.idea
+.idea/
 *.iws
 *.iml
 *.ipr
+out/
 
 ### NetBeans ###
 /nbproject/private/
@@ -29,8 +38,15 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
-### VS Code ###
+### VS Code e Outras IDEs ###
 .vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.sublime-project
+*.sublime-workspace
 
 # Ignorar arquivos brutos do GDAL
 geo_dados/
@@ -43,3 +59,4 @@ zona_processada_storage/*
 
 # Arquivos do sistema operacional
 .DS_Store
+Thumbs.db

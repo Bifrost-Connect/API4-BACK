@@ -1,0 +1,37 @@
+name: Build Executavel Backend
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-backend-jar:
+    name: Compilar Jar Executável do Backend (Spring Boot)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'maven'
+
+      - name: Compilar com Maven
+        run: |
+          chmod +x mvnw
+          ./mvnw clean package -DskipTests
+          mkdir -p executavel
+          cp target/*.jar executavel/api-geo.jar
+
+      - name: Upload do Executável como Artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: geodatahub-backend-jar
+          path: executavel/api-geo.jar
+          retention-days: 14
+
