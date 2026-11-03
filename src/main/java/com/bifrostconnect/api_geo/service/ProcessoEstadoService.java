@@ -48,7 +48,7 @@ public class ProcessoEstadoService {
         return processo;
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRED)
     public Processo atualizarEstado(Processo processo, String etapaNome, String situacaoNome, String mensagem) {
         Long etapaId = buscarEtapaId(etapaNome);
         Long situacaoId = buscarSituacaoId(situacaoNome);
@@ -96,11 +96,8 @@ public class ProcessoEstadoService {
         // 2. Grava na tabela física de LogValidacao
         LogValidacao log = new LogValidacao();
         log.setProcesso(processo);
-        // Concatenamos a etapa na mensagem, já que não há um campo específico "etapa" na entidade
         log.setMensagem(etapaFalha + " - " + motivoErro); 
-        // O campo severidade é NOT NULL, precisamos preencher
         log.setSeveridade("CRÍTICA"); 
-        
         logValidacaoRepository.save(log);
 
         return processo;
