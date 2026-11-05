@@ -94,7 +94,8 @@ public class AdminGovernancaService {
                 "'PERMISSAO_ALTERADA', " +
                 "'PERMISSAO_ALTERADA_COM_EXCECAO_SOD', " +
                 "'SENHA_REDEFINIDA', " +
-                "'ALERTA_SOD') ");
+                "'ALERTA_SOD', " +
+                "'ACESSO_NEGADO_403') ");
 
         List<Object> args = new ArrayList<>();
 

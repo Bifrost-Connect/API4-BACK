@@ -23,6 +23,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.config.http.SessionCreationPolicy;
 
+import com.bifrostconnect.api_geo.security.AcessoNegadoHandler;
 import com.bifrostconnect.api_geo.security.JwtAuthenticationFilter;
 import com.bifrostconnect.api_geo.security.JwtService;
 import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
@@ -72,7 +73,8 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(
             HttpSecurity http,
             JwtService jwtService,
-            UsuarioSessaoService usuarioSessaoService)
+            UsuarioSessaoService usuarioSessaoService,
+            AcessoNegadoHandler acessoNegadoHandler)
             throws Exception {
 
         http
@@ -85,6 +87,7 @@ public class SecurityConfig {
                 .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated()
             )
+            .exceptionHandling(e -> e.accessDeniedHandler(acessoNegadoHandler))
             .addFilterBefore(
                 new JwtAuthenticationFilter(jwtService, usuarioSessaoService),
                 BasicAuthenticationFilter.class)
