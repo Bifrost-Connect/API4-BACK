@@ -26,7 +26,7 @@ public enum Permissao {
     PUBLICACAO_CONSULTAR("PUBLICACAO", "Revisar pacote de publicação e histórico de decisões"),
     RELATORIO_EXPORTAR("PUBLICACAO", "Exportar versão publicada"),
 
-    // consumo (US08 / US09)
+    // consumo
     CATALOGO_CONSULTAR("CONSUMO", "Consultar catálogo de bases"),
     MAPA_CONSULTAR("CONSUMO", "Consultar mapa de dados publicados"),
     LINHAGEM_CONSULTAR("CONSUMO", "Consultar linhagem/rastreabilidade"),

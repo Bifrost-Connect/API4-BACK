@@ -73,6 +73,32 @@ public class GlobalExceptionHandler {
                 .body(error);
     }
 
+    @ExceptionHandler(BaseIndisponivelException.class)
+    public ResponseEntity<Map<String, String>> handleBaseIndisponivel(
+            BaseIndisponivelException ex) {
+
+        Map<String, String> error = new HashMap<>();
+        error.put("erro", ex.getMessage());
+        error.put("etapa_atual", ex.getEtapaAtual());
+        error.put("situacao", ex.getSituacao());
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(error);
+    }
+
+    @ExceptionHandler(RequisicaoInvalidaException.class)
+    public ResponseEntity<Map<String, String>> handleRequisicaoInvalida(
+            RequisicaoInvalidaException ex) {
+
+        Map<String, String> error = new HashMap<>();
+        error.put("erro", ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(error);
+    }
+
     @ExceptionHandler(TimeoutException.class)
     public ResponseEntity<Map<String, String>> handleTimeout(
             TimeoutException ex) {
