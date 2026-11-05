@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -27,6 +28,8 @@ import org.springframework.web.context.WebApplicationContext;
 // com o código GEO_... e devolver 422, e o servidor continua respondendo normal depois.
 // Sem @Transactional: o atualizarEstado roda em REQUIRES_NEW e precisa enxergar o processo gravado
 @SpringBootTest
+// US13: as rotas agora exigem usuário com permissão; Operador tem as que este teste usa
+@WithMockUser(username = "operador", roles = "OPERADOR")
 class ExcecaoGeoespacialIntegrationTest {
 
     @Autowired

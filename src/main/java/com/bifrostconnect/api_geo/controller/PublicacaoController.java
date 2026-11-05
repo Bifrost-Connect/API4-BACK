@@ -7,7 +7,8 @@ import com.bifrostconnect.api_geo.service.RevisaoPublicacaoService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -29,7 +30,7 @@ public class PublicacaoController {
     /**
      * Tarefa 12: aprovação do tratamento e consolidação para publicação.
      */
-    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.CARGA_APROVAR)
     @PostMapping("/{id_carga}/aprovar-tratamento")
     public ResponseEntity<Map<String, Object>> aprovarTratamento(
             @PathVariable("id_carga") Long idCarga,
@@ -47,7 +48,7 @@ public class PublicacaoController {
     /**
      * Tarefa 13: dados para revisão de publicação.
      */
-    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
+    @RequirePermission(Permissao.PUBLICACAO_CONSULTAR)
     @GetMapping("/{id_carga}/revisao")
     public ResponseEntity<Map<String, Object>> obterRevisaoPublicacao(
             @PathVariable("id_carga") Long idCarga) {

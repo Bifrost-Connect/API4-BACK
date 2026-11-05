@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.bifrostconnect.api_geo.entity.ArquivoProcessado;
 import com.bifrostconnect.api_geo.service.ArquivoProcessadoService;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 
 @RestController
 @RequestMapping("/arquivos-processados")
@@ -23,6 +25,7 @@ public class ArquivoProcessadoController {
         this.arquivoProcessadoService = arquivoProcessadoService;
     }
 
+    @RequirePermission(Permissao.CARGA_ENVIAR)
     @PostMapping("/copiar")
     public ResponseEntity<?> criarCopiaProcessada(
             @RequestParam Long arquivoOriginalId,

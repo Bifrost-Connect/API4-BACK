@@ -4,14 +4,15 @@ package com.bifrostconnect.api_geo.controller;
 import java.util.List;
 import java.util.Map;
 
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 import org.springframework.web.bind.annotation.*;
 
 import com.bifrostconnect.api_geo.service.AdminGovernancaService;
 
 @RestController
 @RequestMapping("/admin")
-@PreAuthorize("hasRole('ADMINISTRADOR')")
+@RequirePermission(Permissao.GOVERNANCA_CONSULTAR)
 public class AdminGovernancaController {
 
     private final AdminGovernancaService service;

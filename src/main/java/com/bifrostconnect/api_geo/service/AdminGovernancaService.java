@@ -11,6 +11,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.bifrostconnect.api_geo.security.MatrizPermissoes;
+import com.bifrostconnect.api_geo.security.Permissao;
+
 @Service
 public class AdminGovernancaService {
 
@@ -20,10 +23,8 @@ public class AdminGovernancaService {
         this.jdbc = jdbc;
     }
 
-    /**
-     * A matriz é definida no código para não depender de uma tabela
-     * adicional no banco de dados.
-     */
+    // a matriz sai da MatrizPermissoes, a mesma que o RbacService usa pra liberar as rotas,
+    // então a tela de governança mostra exatamente o que está valendo
     public List<Map<String, Object>> matriz() {
         List<Map<String, Object>> resultado = new ArrayList<>();
 
@@ -31,58 +32,37 @@ public class AdminGovernancaService {
                 jdbc.queryForList(
                         "SELECT id, nome, descricao FROM perfil ORDER BY id");
 
-        Map<String, List<String[]>> regras = new LinkedHashMap<>();
-
-        regras.put("OPERADOR", List.<String[]>of(
-                new String[]{"CARGAS", "CRIAR",
-                        "Enviar e operar cargas"},
-                new String[]{"PUBLICACOES", "CONSULTAR",
-                        "Consultar publicações"},
-                new String[]{"MAPA_E_CATALOGO", "CONSULTAR",
-                        "Consultar mapa e catálogo"}
-        ));
-
-        regras.put("AUDITOR", List.<String[]>of(
-                new String[]{"CARGAS", "AUDITAR",
-                        "Tratar problemas de validação"},
-                new String[]{"PUBLICACOES", "CONSULTAR",
-                        "Consultar publicações"},
-                new String[]{"MAPA_E_CATALOGO", "CONSULTAR",
-                        "Consultar mapa e catálogo"}
-        ));
-
-        regras.put("ANALISTA", List.<String[]>of(
-                new String[]{"MAPA_E_CATALOGO", "CONSULTAR",
-                        "Consultar mapa e catálogo"}
-        ));
-
-        regras.put("ADMINISTRADOR", List.<String[]>of(
-                new String[]{"ADMINISTRACAO", "GERENCIAR",
-                        "Gerenciar usuários, perfis e governança"},
-                new String[]{"CARGAS", "GERENCIAR",
-                        "Gerenciar cargas"},
-                new String[]{"PUBLICACOES", "GERENCIAR",
-                        "Gerenciar publicações"},
-                new String[]{"MAPA_E_CATALOGO", "GERENCIAR",
-                        "Gerenciar mapa e catálogo"}
-        ));
-
         for (Map<String, Object> perfil : perfis) {
             String nome = String.valueOf(perfil.get("nome"));
 
-            for (String[] regra :
-                    regras.getOrDefault(nome, List.of())) {
-
+            for (Permissao permissao : MatrizPermissoes.permissoesDo(nome)) {
                 Map<String, Object> linha = new LinkedHashMap<>();
 
                 linha.put("perfil_id", perfil.get("id"));
                 linha.put("perfil", nome);
                 linha.put("descricao", perfil.get("descricao"));
-                linha.put("recurso", regra[0]);
-                linha.put("permissao", regra[1]);
-                linha.put("descricao_permissao", regra[2]);
+                linha.put("recurso", permissao.getModulo());
+                linha.put("permissao", permissao.name());
+                linha.put("descricao_permissao", permissao.getDescricao());
+                linha.put("liberada_por_excecao_sod", false);
 
                 resultado.add(linha);
+            }
+
+            if (MatrizPermissoes.PERFIL_COM_EXCECAO_SOD.equals(nome)) {
+                for (Permissao permissao : MatrizPermissoes.LIBERADAS_POR_EXCECAO_SOD) {
+                    Map<String, Object> linha = new LinkedHashMap<>();
+
+                    linha.put("perfil_id", perfil.get("id"));
+                    linha.put("perfil", nome);
+                    linha.put("descricao", perfil.get("descricao"));
+                    linha.put("recurso", permissao.getModulo());
+                    linha.put("permissao", permissao.name());
+                    linha.put("descricao_permissao", permissao.getDescricao());
+                    linha.put("liberada_por_excecao_sod", true);
+
+                    resultado.add(linha);
+                }
             }
         }
 
@@ -113,7 +93,8 @@ public class AdminGovernancaService {
                 "'USUARIO_INATIVADO', " +
                 "'PERMISSAO_ALTERADA', " +
                 "'PERMISSAO_ALTERADA_COM_EXCECAO_SOD', " +
-                "'SENHA_REDEFINIDA') ");
+                "'SENHA_REDEFINIDA', " +
+                "'ALERTA_SOD') ");
 
         List<Object> args = new ArrayList<>();
 

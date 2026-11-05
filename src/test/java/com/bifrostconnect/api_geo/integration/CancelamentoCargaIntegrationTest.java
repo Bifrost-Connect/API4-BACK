@@ -37,7 +37,7 @@ public class CancelamentoCargaIntegrationTest {
 
     @Test
     @DisplayName("Tarefa 19: Deve cancelar/invalidar carga com sucesso informando o motivo (204 No Content)")
-    @WithMockUser(roles = "ADMINISTRADOR")
+    @WithMockUser(roles = "OPERADOR")
     void deveCancelarCargaComSucesso() throws Exception {
         Processo p = Processo.builder()
                 .anoSafra("2026")
@@ -59,7 +59,7 @@ public class CancelamentoCargaIntegrationTest {
 
     @Test
     @DisplayName("Tarefa 19: Deve retornar 404 Not Found se o processo a ser cancelado não existir")
-    @WithMockUser(roles = "ADMINISTRADOR")
+    @WithMockUser(roles = "OPERADOR")
     void deveRetornar404QuandoProcessoNaoExistir() throws Exception {
         String jsonBody = "{\"motivo\": \"Processo inexistente.\"}";
 

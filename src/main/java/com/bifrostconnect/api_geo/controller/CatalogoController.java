@@ -3,7 +3,8 @@ package com.bifrostconnect.api_geo.controller;
 import com.bifrostconnect.api_geo.service.CatalogoBasesService;
 
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -12,7 +13,7 @@ import java.util.Map;
 // US09 - Catálogo de bases publicadas que o Analista consulta
 @RestController
 @RequestMapping("/catalogo")
-@PreAuthorize("hasAnyRole('ANALISTA', 'AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
+@RequirePermission(Permissao.CATALOGO_CONSULTAR)
 public class CatalogoController {
 
     private final CatalogoBasesService catalogoBasesService;

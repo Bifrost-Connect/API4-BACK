@@ -9,6 +9,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 
 @RestController
 @RequestMapping("/indicadores")
@@ -18,12 +20,14 @@ public class IndicadorController {
     private final LinhagemService linhagemService;
     private final ProcessoService processoService;
 
+    @RequirePermission(Permissao.LINHAGEM_CONSULTAR)
     @GetMapping("/{id}/linhagem")
     public ResponseEntity<LinhagemResponseDTO> consultarLinhagem(@PathVariable Long id) {
         LinhagemResponseDTO linhagem = linhagemService.buscarLinhagem(id);
         return ResponseEntity.ok(linhagem);
     }
 
+    @RequirePermission(Permissao.VERSAO_PUBLICAR)
     @PatchMapping("/{id}/fechar")
     public ResponseEntity<Void> fecharIndicador(
             @PathVariable Long id,
@@ -36,6 +40,7 @@ public class IndicadorController {
     }
 
     // Tarefa 7 (API de Exportação): Rota GET /api/indicadores/{id}/exportar (ou /versoes/{id}/exportar)
+    @RequirePermission(Permissao.RELATORIO_EXPORTAR)
     @GetMapping("/{id}/exportar")
     public ResponseEntity<Resource> exportarVersao(
             @PathVariable Long id,

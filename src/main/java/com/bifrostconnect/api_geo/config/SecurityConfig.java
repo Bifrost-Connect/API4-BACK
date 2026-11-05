@@ -20,6 +20,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.config.http.SessionCreationPolicy;
+
+import com.bifrostconnect.api_geo.security.JwtAuthenticationFilter;
+import com.bifrostconnect.api_geo.security.JwtService;
+import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
 
 @Configuration
 @EnableMethodSecurity
@@ -58,17 +64,30 @@ public class SecurityConfig {
         };
     }
 
+    // US13 - Tarefa 14: nenhuma rota fica aberta. Só o login e o preflight do CORS passam sem
+    // autenticação; o resto exige usuário (JWT ou Basic) e cada rota ainda pede a sua
+    // permissão com @rbac.requirePermission (RbacService).
+    // O Basic continua aceito porque o front atual ainda manda as credenciais assim.
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http)
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            JwtService jwtService,
+            UsuarioSessaoService usuarioSessaoService)
             throws Exception {
 
         http
             .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults())
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .anyRequest().permitAll()
+                .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                .requestMatchers("/error").permitAll()
+                .anyRequest().authenticated()
             )
+            .addFilterBefore(
+                new JwtAuthenticationFilter(jwtService, usuarioSessaoService),
+                BasicAuthenticationFilter.class)
             .httpBasic(Customizer.withDefaults());
 
         return http.build();

@@ -54,7 +54,7 @@ class ConsolidacaoPublicacaoIntegrationTest {
 
     @Test
     @DisplayName("US08 - Tarefa 12: aprovar o Tratamento consolida geometrias, hectares e linhagem num GeoJSON")
-    @WithMockUser(roles = "ADMINISTRADOR")
+    @WithMockUser(roles = "GESTOR")
     void deveConsolidarPacoteAoAprovarTratamento() throws Exception {
         Long processoId = criarCarga("CALCULO_ANALITICO", "CONCLUIDA");
         Long copiaId = criarCopiaTratada(processoId);
@@ -106,7 +106,7 @@ class ConsolidacaoPublicacaoIntegrationTest {
 
     @Test
     @DisplayName("US08 - Tarefa 12: carga em quarentena não pode ser consolidada")
-    @WithMockUser(roles = "ADMINISTRADOR")
+    @WithMockUser(roles = "GESTOR")
     void naoDeveConsolidarCargaEmQuarentena() throws Exception {
         Long processoId = criarCarga("VALIDACAO", "EM_VALIDACAO");
         criarCopiaTratada(processoId);
