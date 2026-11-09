@@ -1,6 +1,7 @@
 package com.bifrostconnect.api_geo.controller;
 
-import com.bifrostconnect.api_geo.service.MotorGeomatematicoService;
+import com.bifrostconnect.api_geo.dto.EvolucaoResponseDTO;
+import com.bifrostconnect.api_geo.service.ComparacaoService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -10,6 +11,9 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -22,11 +26,16 @@ class AnaliseEspacialControllerTest {
     private MockMvc mockMvc;
 
     @MockBean
-    private MotorGeomatematicoService motorGeomatematicoService;
+    private ComparacaoService comparacaoService;
 
     @Test
     @WithMockUser
     void deveRetornarEvolucaoGlobal() throws Exception {
+        when(comparacaoService.calcularEvolucao(eq(1L), eq(2L), any(), any()))
+                .thenReturn(new EvolucaoResponseDTO(
+                        1500.5, 1750.0, 249.5, 16.63, 300.0, 50.5, 1450.0, false,
+                        "{\"type\":\"FeatureCollection\",\"features\":[]}"));
+
         String requestBody = """
                 {
                   "safraAId": 1,
@@ -34,7 +43,7 @@ class AnaliseEspacialControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/analise/comparacao/evolucao")
+        mockMvc.perform(post("/analise/comparacao/evolucao")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(requestBody))
                 .andExpect(status().isOk())
@@ -45,7 +54,7 @@ class AnaliseEspacialControllerTest {
     @Test
     @WithMockUser
     void deveRetornarComparacaoPorImovel() throws Exception {
-        mockMvc.perform(get("/api/analise/comparacao/imovel/SP-123456")
+        mockMvc.perform(get("/analise/comparacao/imovel/SP-123456")
                 .param("safraAId", "1")
                 .param("safraBId", "2"))
                 .andExpect(status().isOk())
