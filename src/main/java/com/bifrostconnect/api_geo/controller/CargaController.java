@@ -10,7 +10,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -92,6 +93,7 @@ public class CargaController {
         this.processoService = processoService;
     }
 
+    @RequirePermission(Permissao.CARGA_CONSULTAR)
     @GetMapping("/{id}/calculos")
     public ResponseEntity<?> consultarCalculos(@PathVariable Long id) {
         try {
@@ -105,7 +107,7 @@ public class CargaController {
     }
 
     // Tarefa 3 e 5: Recebe, valida e persiste os metadados.
-    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.CARGA_ENVIAR)
     @PostMapping("/metadados")
     public ResponseEntity<Processo> cadastrarMetadados(
             @Valid @RequestBody MetadadosCargaRequest request) {
@@ -125,7 +127,7 @@ public class CargaController {
     }
 
     // Tarefa 4, 5 e 7: Recebe o arquivo, realiza o upload e registra na auditoria.
-    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.CARGA_ENVIAR)
     @PostMapping("/upload")
     public ResponseEntity<?> uploadArquivo(
             @RequestParam("processoId") Long processoId,
@@ -201,6 +203,7 @@ public class CargaController {
     }
 
     // Download do arquivo original.
+    @RequirePermission(Permissao.ARQUIVO_BAIXAR)
     @GetMapping("/download/{processoId}")
     public ResponseEntity<Resource> baixarArquivoOriginal(
             @PathVariable Long processoId) {
@@ -260,6 +263,7 @@ public class CargaController {
     // ==========================================
     // Tarefa 15: API de Rastreabilidade e Linhagem
     // ==========================================
+    @RequirePermission(Permissao.LINHAGEM_CONSULTAR)
     @GetMapping("/{id}/linhagem")
     public ResponseEntity<LinhagemResponseDTO> obterLinhagem(@PathVariable Long id) {
         LinhagemResponseDTO linhagem = linhagemService.buscarLinhagem(id);
@@ -269,6 +273,7 @@ public class CargaController {
     // ==========================================
     // Tarefa 16: API de Exportação de Rejeições (CSV)
     // ==========================================
+    @RequirePermission(Permissao.QUARENTENA_EXPORTAR)
     @GetMapping({"/{id}/rejeicoes/exportar", "/{id}/quarentena/exportar"})
     public ResponseEntity<byte[]> exportarRejeicoesEmCsv(@PathVariable Long id) {
         try {
@@ -295,7 +300,7 @@ public class CargaController {
     // ==========================================
     // Tarefa 17: API de Encaminhamento Auditor ➔ Operador
     // ==========================================
-    @PreAuthorize("hasAnyRole('AUDITOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.NOTIFICACAO_ENVIAR)
     @PostMapping("/{id}/quarentena/notificar-operador")
     public ResponseEntity<Void> notificarOperador(
             @PathVariable Long id,
@@ -308,7 +313,7 @@ public class CargaController {
     // ==========================================
     // Tarefa 18: API de Reprocessamento de Carga
     // ==========================================
-    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.CARGA_ENVIAR)
     @PostMapping("/{id}/reprocessar")
     public ResponseEntity<?> reprocessarCarga(
             @PathVariable Long id,
@@ -340,7 +345,7 @@ public class CargaController {
     // ==========================================
     // Tarefa 19: API de Cancelamento/Invalidação
     // ==========================================
-    @PreAuthorize("hasAnyRole('OPERADOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.CARGA_CANCELAR)
     @PatchMapping("/{id}/cancelar")
     public ResponseEntity<Void> cancelarCarga(
             @PathVariable Long id,
@@ -354,7 +359,7 @@ public class CargaController {
     // ==========================================
     // Gate de Decisão do Gestor (Validação, Tratamento, Publicação)
     // ==========================================
-    @PreAuthorize("hasAnyRole('GESTOR', 'AUDITOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.CARGA_APROVAR)
     @PostMapping("/{id}/decisao-gestor")
     public ResponseEntity<Map<String, Object>> registrarDecisaoGestor(
             @PathVariable Long id,
@@ -367,7 +372,7 @@ public class CargaController {
     // ==========================================
     // Alocação de Auditor na Quarentena
     // ==========================================
-    @PreAuthorize("hasAnyRole('GESTOR', 'AUDITOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.CARGA_ATRIBUIR)
     @PostMapping("/{id}/alocar-auditor")
     public ResponseEntity<Map<String, Object>> alocarAuditor(
             @PathVariable Long id,
@@ -380,6 +385,7 @@ public class CargaController {
     // ==========================================
     // Listagem de Auditores Ativos
     // ==========================================
+    @RequirePermission(Permissao.CARGA_CONSULTAR)
     @GetMapping("/auditores")
     public ResponseEntity<?> listarAuditoresAtivos() {
         return ResponseEntity.ok(gestorDecisaoService.listarAuditoresAtivos());
@@ -388,6 +394,7 @@ public class CargaController {
     // ==========================================
     // Histórico de Decisões do Gestor por Processo
     // ==========================================
+    @RequirePermission(Permissao.PUBLICACAO_CONSULTAR)
     @GetMapping("/{id}/decisoes-gestor")
     public ResponseEntity<?> listarDecisoesPorProcesso(@PathVariable Long id) {
         return ResponseEntity.ok(gestorDecisaoService.listarDecisoesPorProcesso(id));
@@ -396,7 +403,7 @@ public class CargaController {
     // ==========================================
     // Importação em lote da pasta GEOESPACIAIS para camada_referencia
     // ==========================================
-    @PreAuthorize("hasAnyRole('OPERADOR', 'AUDITOR', 'ADMINISTRADOR')")
+    @RequirePermission(Permissao.GEOMETRIA_EDITAR)
     @PostMapping("/referencias/importar")
     public ResponseEntity<Map<String, Object>> importarReferenciasGeoespaciais(
             @RequestParam(value = "fonte", required = false) String fonte,

@@ -36,7 +36,7 @@ public class EncaminhamentoQuarentenaIntegrationTest {
 
     @Test
     @DisplayName("Tarefa 17: Auditor deve conseguir notificar operador e liberar chamado com sucesso (204 No Content)")
-    @WithMockUser(roles = "AUDITOR")
+    @WithMockUser(roles = "GESTOR")
     void deveNotificarOperadorComSucesso() throws Exception {
         Processo p = Processo.builder()
                 .anoSafra("2026")
@@ -54,7 +54,7 @@ public class EncaminhamentoQuarentenaIntegrationTest {
 
     @Test
     @DisplayName("Tarefa 17: Deve retornar 404 Not Found se o processo não existir")
-    @WithMockUser(roles = "AUDITOR")
+    @WithMockUser(roles = "GESTOR")
     void deveRetornar404QuandoProcessoNaoExistir() throws Exception {
         mockMvc.perform(post("/carga/99999/quarentena/notificar-operador"))
                 .andExpect(status().isNotFound());

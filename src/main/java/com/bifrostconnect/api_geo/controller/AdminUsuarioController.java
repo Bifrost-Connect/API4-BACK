@@ -6,7 +6,8 @@ import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -15,7 +16,7 @@ import com.bifrostconnect.api_geo.service.AdminUsuarioService;
 
 @RestController
 @RequestMapping("/admin/usuarios")
-@PreAuthorize("hasRole('ADMINISTRADOR')")
+@RequirePermission(Permissao.USUARIO_GERENCIAR)
 public class AdminUsuarioController {
 
     private final AdminUsuarioService service;

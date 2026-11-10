@@ -14,15 +14,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
+
 @Service
 public class AdminUsuarioService {
 
+    private static final String PERFIL_ADMIN = "ADMINISTRADOR";
+
     private final JdbcTemplate jdbc;
+    private final UsuarioSessaoService usuarioSessaoService;
     private final BCryptPasswordEncoder encoder =
             new BCryptPasswordEncoder();
 
-    public AdminUsuarioService(JdbcTemplate jdbc) {
+    public AdminUsuarioService(JdbcTemplate jdbc, UsuarioSessaoService usuarioSessaoService) {
         this.jdbc = jdbc;
+        this.usuarioSessaoService = usuarioSessaoService;
     }
 
     @Transactional
@@ -136,6 +142,7 @@ public class AdminUsuarioService {
             String ip) {
 
         exigirUsuario(id);
+        bloquearAlteracaoDoProprioUsuario(id, administrador);
 
         Long perfilId = numeroObrigatorio(body, "perfilId");
         exigirPerfil(perfilId);
@@ -147,11 +154,12 @@ public class AdminUsuarioService {
                 ? null
                 : body.get("justificativa").toString().trim();
 
+        // mesma regra do CHECK previsto na US13-BANCO (Tarefa 25): pelo menos 10 caracteres
         if (excecaoSoD &&
-                (justificativa == null || justificativa.isBlank())) {
+                (justificativa == null || justificativa.length() < 10)) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "A justificativa é obrigatória para uma exceção SoD.");
+                    "A justificativa (mínimo de 10 caracteres) é obrigatória para uma exceção SoD.");
         }
 
         String perfilAnterior = jdbc.queryForObject(
@@ -162,10 +170,19 @@ public class AdminUsuarioService {
 
         String perfilNovo = nomePerfil(perfilId);
 
+        if (PERFIL_ADMIN.equals(perfilAnterior) && !PERFIL_ADMIN.equals(perfilNovo)) {
+            bloquearSeForUltimoAdmin(id);
+        }
+
+        // Tarefa 16: versao_sessao + 1 derruba na hora os tokens emitidos com o perfil antigo.
+        // A exceção SoD fica gravada no usuário (o RbacService lê de lá) e some se não for declarada
         jdbc.update(
-                "UPDATE usuario SET perfil_id=?, data_atualizacao=now() " +
+                "UPDATE usuario SET perfil_id=?, excecao_sod_autorizada=?, justificativa_sod=?, " +
+                "versao_sessao = versao_sessao + 1, data_atualizacao=now() " +
                 "WHERE id=?",
                 perfilId,
+                excecaoSoD,
+                excecaoSoD ? justificativa : null,
                 id);
 
         String detalhes = "Perfil alterado de " + perfilAnterior
@@ -196,10 +213,16 @@ public class AdminUsuarioService {
             String ip) {
 
         exigirUsuario(id);
+        bloquearAlteracaoDoProprioUsuario(id, administrador);
 
+        if (!ativo) {
+            bloquearSeForUltimoAdmin(id);
+        }
+
+        // Tarefa 16: inativou (ou reativou) = sessões antigas revogadas
         jdbc.update(
-                "UPDATE usuario SET ativo=?, data_atualizacao=now() " +
-                "WHERE id=?",
+                "UPDATE usuario SET ativo=?, versao_sessao = versao_sessao + 1, " +
+                "data_atualizacao=now() WHERE id=?",
                 ativo,
                 id);
 
@@ -223,9 +246,10 @@ public class AdminUsuarioService {
         exigirUsuario(id);
         validarSenha(senha);
 
+        // senha nova também derruba os tokens que já estavam abertos
         jdbc.update(
-                "UPDATE usuario SET senha_hash=?, data_atualizacao=now() " +
-                "WHERE id=?",
+                "UPDATE usuario SET senha_hash=?, versao_sessao = versao_sessao + 1, " +
+                "data_atualizacao=now() WHERE id=?",
                 encoder.encode(senha),
                 id);
 
@@ -240,8 +264,8 @@ public class AdminUsuarioService {
     public Map<String, Object> buscar(Long id) {
         List<Map<String, Object>> linhas = jdbc.queryForList(
                 "SELECT u.id, u.nome, u.email, u.perfil_id, " +
-                "p.nome AS perfil, u.ativo, u.data_criacao, " +
-                "u.data_atualizacao " +
+                "p.nome AS perfil, u.ativo, u.excecao_sod_autorizada, " +
+                "u.justificativa_sod, u.data_criacao, u.data_atualizacao " +
                 "FROM usuario u JOIN perfil p ON p.id=u.perfil_id " +
                 "WHERE u.id=?",
                 id);
@@ -253,6 +277,39 @@ public class AdminUsuarioService {
 
         // A senha nunca é incluída na resposta.
         return linhas.get(0);
+    }
+
+    // US13 - Tarefa 17: Administrador não mexe no próprio cargo/status (evita escalonamento e
+    // evita alguém se trancar pra fora). Outro Administrador é quem tem que fazer
+    private void bloquearAlteracaoDoProprioUsuario(Long alvoId, String administrador) {
+        boolean proprioUsuario = usuarioSessaoService.buscarPorLogin(administrador)
+                .map(ator -> ator.id().equals(alvoId))
+                .orElse(false);
+
+        if (proprioUsuario) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "O Administrador não pode alterar o próprio perfil ou status.");
+        }
+    }
+
+    // US13 - Tarefa 17: sempre tem que sobrar pelo menos um Administrador ativo.
+    // O FOR UPDATE trava as linhas dos admins ativos, então dois pedidos ao mesmo tempo não
+    // conseguem inativar os dois últimos admins um em cada transação
+    private void bloquearSeForUltimoAdmin(Long alvoId) {
+        List<Long> adminsAtivos = jdbc.query(
+                "SELECT u.id FROM usuario u " +
+                "JOIN perfil p ON p.id=u.perfil_id " +
+                "WHERE p.nome=? AND u.ativo=TRUE " +
+                "FOR UPDATE OF u",
+                (rs, row) -> rs.getLong(1),
+                PERFIL_ADMIN);
+
+        if (adminsAtivos.contains(alvoId) && adminsAtivos.size() <= 1) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Não é possível inativar ou trocar o cargo do último Administrador ativo.");
+        }
     }
 
     private void exigirUsuario(Long id) {

@@ -12,6 +12,8 @@ import org.springframework.web.server.ResponseStatusException;
 import com.bifrostconnect.api_geo.dto.CruzamentoAnaliseRequest;
 import com.bifrostconnect.api_geo.dto.CruzamentoAnaliseResponse;
 import com.bifrostconnect.api_geo.service.AnaliseCruzamentoService;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 
 @RestController
 @RequestMapping("/analise")
@@ -25,6 +27,7 @@ public class AnaliseController {
 
     // Tarefa 14: cruza as bases publicadas e devolve as propriedades e hectares afetados.
     // Body vazio ({}) cruza tudo que está publicado com todas as camadas configuradas
+    @RequirePermission(Permissao.ANALISE_EXECUTAR)
     @PostMapping("/cruzamento")
     public ResponseEntity<?> cruzar(@RequestBody(required = false) CruzamentoAnaliseRequest request) {
         try {

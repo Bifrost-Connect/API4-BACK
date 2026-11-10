@@ -31,6 +31,8 @@ import com.bifrostconnect.api_geo.service.ProcessoService;
 import com.bifrostconnect.api_geo.service.ValidacaoService;
 
 @SpringBootTest
+// US13: as rotas agora exigem usuário com permissão; Operador tem as que este teste usa
+@WithMockUser(username = "operador", roles = "OPERADOR")
 class ArquivoControllerTest {
 
     private MockMvc mockMvc;

@@ -33,6 +33,8 @@ import com.bifrostconnect.api_geo.service.ProcessoDashboardService;
 import com.bifrostconnect.api_geo.service.ProcessoService;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.http.HttpStatus;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 
 @RestController
 @RequestMapping("/processos")
@@ -52,6 +54,7 @@ public class ProcessoController {
         this.arquivoOriginalRepository = arquivoOriginalRepository;
     }
 
+    @RequirePermission(Permissao.CARGA_CONSULTAR)
     @GetMapping
     public ResponseEntity<Page<ProcessoDashboardResponse>> listarProcessos(
             @RequestParam(required = false) LocalDate dataInicio,
@@ -78,6 +81,7 @@ public class ProcessoController {
         return ResponseEntity.ok(processos);
     }
 
+    @RequirePermission(Permissao.CARGA_CONSULTAR)
     @GetMapping("/metricas")
     public ResponseEntity<ProcessoMetricasResponse> buscarMetricas() {
 
@@ -88,6 +92,7 @@ public class ProcessoController {
     }
 
     // --- TAREFA 5: Endpoint para listar auditores reais no modal de quarentena ---
+    @RequirePermission(Permissao.CARGA_CONSULTAR)
     @GetMapping("/usuarios/auditores")
     public ResponseEntity<?> listarAuditores() {
         // Delega para o service buscar os analistas/auditores cadastrados reais
@@ -95,6 +100,7 @@ public class ProcessoController {
     }
 
    // --- TAREFA 5: Endpoint para associar o editor e alterar a situação para EM_ANDAMENTO ---
+    @RequirePermission(Permissao.CARGA_ATRIBUIR)
     @PutMapping("/{id}/editor")
     public ResponseEntity<Processo> alocarEditor(
             @PathVariable Long id,
@@ -106,6 +112,7 @@ public class ProcessoController {
         return ResponseEntity.ok(processoAtualizado);
     }
 
+    @RequirePermission(Permissao.CARGA_CONSULTAR)
     @GetMapping("/{id}/log-espacial")
     public ResponseEntity<List<LogEspacialResponse>> buscarLogEspacial(
             @PathVariable Long id) {
@@ -117,6 +124,7 @@ public class ProcessoController {
     }
 
     // --- TAREFA 6: Já estruturado para carregar logs, validações e dados detalhados ---
+    @RequirePermission(Permissao.CARGA_CONSULTAR)
     @GetMapping("/{id}")
     public ResponseEntity<ProcessLogDetailsResponse> buscarDetalhesProcesso(
             @PathVariable Long id) {
@@ -131,6 +139,7 @@ public class ProcessoController {
         }
     }
 
+    @RequirePermission(Permissao.CARGA_ENVIAR)
     @PostMapping("/{id}/processar")
     public ResponseEntity<?> processarProcesso(
             @PathVariable Long id,

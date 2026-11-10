@@ -8,7 +8,8 @@ import com.bifrostconnect.api_geo.service.MapaService;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -36,6 +37,7 @@ public class MapaController {
     /**
      * Tarefa 16: detalhes de uma feição selecionada no mapa.
      */
+    @RequirePermission(Permissao.MAPA_CONSULTAR)
     @GetMapping("/feicoes/{id_poligono}")
     public ResponseEntity<FeicaoDetalheResponseDTO> buscarDetalhesFeicao(
             @PathVariable("id_poligono") Long idPoligono) {
@@ -49,6 +51,7 @@ public class MapaController {
     /**
      * Tarefas 15 e 17: rota de pontos monitorados / bases cadastradas para o painel do mapa.
      */
+    @RequirePermission(Permissao.MAPA_CONSULTAR)
     @GetMapping("/camadas-legado")
     public ResponseEntity<List<Map<String, Object>>> listarCamadasAnalista(
             @RequestParam(required = false) String conjunto,
@@ -65,7 +68,7 @@ public class MapaController {
      * size: quantidade de feições por página.
      * conjuntoId, anoSafra, bbox e busca: filtros opcionais.
      */
-    @PreAuthorize("hasAnyRole('ANALISTA', 'AUDITOR', 'ADMINISTRADOR', 'OPERADOR')")
+    @RequirePermission(Permissao.MAPA_CONSULTAR)
     @GetMapping({"/camadas", "/camadas-geojson"})
     public ResponseEntity<Map<String, Object>> listarCamadasMapaGeoJson(
             @RequestParam(required = false) Long conjuntoId,

@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 
 @RestController
 @RequestMapping("/notificacoes")
@@ -19,6 +21,7 @@ public class NotificacaoController {
         this.notificacaoService = notificacaoService;
     }
 
+    @RequirePermission(Permissao.NOTIFICACAO_ENVIAR)
     @PostMapping("/auditor")
     public ResponseEntity<List<NotificacaoResponse>> notificarAuditores(
             @RequestBody NotificacaoRequest request) {
@@ -46,6 +49,7 @@ public class NotificacaoController {
         return ResponseEntity.ok(resposta);
     }
 
+    @RequirePermission(Permissao.CARGA_CONSULTAR)
     @GetMapping("/usuario/{usuarioId}")
     public ResponseEntity<List<NotificacaoResponse>> listarPorUsuario(
             @PathVariable Long usuarioId) {

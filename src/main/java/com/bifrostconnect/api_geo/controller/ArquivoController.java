@@ -25,6 +25,8 @@ import com.bifrostconnect.api_geo.entity.ArquivoOriginal;
 import com.bifrostconnect.api_geo.service.ArquivoService;
 
 import lombok.RequiredArgsConstructor;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 
 @RestController
 @RequestMapping("/arquivos")
@@ -33,6 +35,7 @@ public class ArquivoController {
 
     private final ArquivoService arquivoService;
 
+    @RequirePermission(Permissao.CARGA_ENVIAR)
     @PostMapping("/upload")
     public ResponseEntity<Map<String, Object>> uploadArquivoZonaBruta(
             @RequestParam("file") MultipartFile file,
@@ -85,6 +88,7 @@ public class ArquivoController {
             }
     }
     // método que retorna o arquivo original, preservando o formato e o conteúdo
+    @RequirePermission(Permissao.ARQUIVO_BAIXAR)
     @GetMapping("/{id}")
     public ResponseEntity<Resource> baixarArquivoOriginal(@PathVariable Long id) {
 

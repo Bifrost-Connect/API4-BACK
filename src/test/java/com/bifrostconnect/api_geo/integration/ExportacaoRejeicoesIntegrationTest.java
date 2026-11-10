@@ -40,7 +40,7 @@ public class ExportacaoRejeicoesIntegrationTest {
 
     @Test
     @DisplayName("Tarefa 16: Deve exportar as rejeições da quarentena em formato CSV com sucesso")
-    @WithMockUser(roles = "AUDITOR")
+    @WithMockUser(roles = "OPERADOR")
     void deveExportarRejeicoesCsvComSucesso() throws Exception {
         // 1. Cria um processo base
         Processo p = Processo.builder()
@@ -71,7 +71,7 @@ public class ExportacaoRejeicoesIntegrationTest {
 
     @Test
     @DisplayName("Tarefa 16: Deve retornar 404 Not Found se o processo não tiver rejeições")
-    @WithMockUser(roles = "AUDITOR")
+    @WithMockUser(roles = "OPERADOR")
     void deveRetornar404QuandoNaoHouverRejeicoes() throws Exception {
         mockMvc.perform(get("/carga/99999/rejeicoes/exportar"))
                 .andExpect(status().isNotFound());
