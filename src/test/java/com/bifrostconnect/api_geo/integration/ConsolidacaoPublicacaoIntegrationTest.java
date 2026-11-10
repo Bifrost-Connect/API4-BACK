@@ -2,6 +2,7 @@ package com.bifrostconnect.api_geo.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,11 +25,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import org.springframework.transaction.annotation.Transactional;
-
-// US08 - Tarefa 12: aprovação do Tratamento gera o pacote GeoJSON pra revisão de Publicação
+// 1. Removido o @Transactional da classe para evitar bloqueio de concorrência com o código da aplicação
 @SpringBootTest
-@Transactional
 class ConsolidacaoPublicacaoIntegrationTest {
 
     @Autowired
@@ -50,6 +48,12 @@ class ConsolidacaoPublicacaoIntegrationTest {
         jdbcTemplate.update("INSERT INTO conjunto (id, nome, ativo) VALUES (1, 'Conjunto', true) ON CONFLICT (id) DO NOTHING");
         jdbcTemplate.update("INSERT INTO perfil (id, nome, descricao) VALUES (1, 'OPERADOR', 'Perfil') ON CONFLICT (id) DO NOTHING");
         jdbcTemplate.update("INSERT INTO usuario (id, nome, email, senha_hash, perfil_id, ativo) VALUES (1, 'Op', 'op@test.com', 'hash', 1, true) ON CONFLICT (id) DO NOTHING");
+    }
+
+    // 2. Adicionado o método para simular o "rollback" limpando os dados de forma segura após o teste
+    @AfterEach
+    void tearDown() {
+        jdbcTemplate.execute("TRUNCATE TABLE processo CASCADE");
     }
 
     @Test
@@ -127,6 +131,11 @@ class ConsolidacaoPublicacaoIntegrationTest {
             VALUES (1, 1, 1, (SELECT id FROM etapa WHERE nome = ?), (SELECT id FROM situacao WHERE nome = ?), '2026', '4674')
             RETURNING id
             """, Long.class, etapa, situacao);
+
+        jdbcTemplate.update("""
+            INSERT INTO processo_etapa (processo_id, etapa_id, situacao_id, data_inicio, mensagem)
+            VALUES (?, (SELECT id FROM etapa WHERE nome = ?), (SELECT id FROM situacao WHERE nome = ?), NOW(), 'Carga mock criada para teste')
+            """, processoId, etapa, situacao);
 
         jdbcTemplate.update("""
             INSERT INTO arquivo_original (processo_id, usuario_upload_id, nome_original, url_armazenamento, hash_sha256)
