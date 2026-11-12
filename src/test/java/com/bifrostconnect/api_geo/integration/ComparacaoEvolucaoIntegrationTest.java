@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -18,9 +21,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,18 +34,15 @@ import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.bifrostconnect.api_geo.dto.EvolucaoResponseDTO;
+import com.bifrostconnect.api_geo.security.RbacService;
 import com.bifrostconnect.api_geo.service.ComparacaoService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-// US10 - Tarefas 17, 18 e 19: comparação de evolução entre duas safras no banco local.
-// Roda em transação com rollback, igual o DadosPublicadosMapaIntegrationTest
 @SpringBootTest
 @Transactional
+@WithMockUser(username = "admin@teste.local", authorities = {"COMPARAR_SAFRAS", "ROLE_ADMINISTRADOR"})
 class ComparacaoEvolucaoIntegrationTest {
 
-    // faixa fina de latitude perto de Brasília; dentro dela a área geodésica cresce
-    // praticamente linear com a largura em longitude, então dá pra montar os
-    // polígonos já no tamanho em hectares que o cenário pede
     private static final double LAT_SUL = -15.010;
     private static final double LAT_NORTE = -15.000;
     private static final double LON_INICIO = -47.000;
@@ -53,26 +56,35 @@ class ComparacaoEvolucaoIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    // Engana o RbacInterceptor para não barrar as rotas
+    @MockBean
+    private RbacService rbacService;
+
     private MockMvc mockMvc;
 
     private long gestorId;
     private long conjuntoId;
     private long orgaoId;
-    // quantos graus de longitude dão 1 ha dentro da faixa
     private double grausPorHectare;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(context).build();
+        mockMvc = MockMvcBuilders
+                .webAppContextSetup(context)
+                .apply(SecurityMockMvcConfigurers.springSecurity())
+                .build();
+
+        // Diz ao interceptor que este teste tem permissão para aceder à rota
+        when(rbacService.requirePermission(any())).thenReturn(true);
+
+        jdbc.execute("INSERT INTO perfil (nome) VALUES ('ADMINISTRADOR') ON CONFLICT DO NOTHING");
+        jdbc.execute("INSERT INTO usuario (nome, email, senha_hash, perfil_id, ativo) "
+                + "VALUES ('Admin', 'admin@teste.local', 'hash', (SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR' LIMIT 1), TRUE) "
+                + "ON CONFLICT DO NOTHING");
+
+        gestorId = jdbc.queryForObject("SELECT id FROM usuario WHERE email = 'admin@teste.local'", Long.class);
 
         String s = UUID.randomUUID().toString().substring(0, 8);
-
-        gestorId = jdbc.queryForObject(
-                "INSERT INTO usuario (nome, email, senha_hash, perfil_id, ativo) "
-                        + "VALUES (?, ?, 'hash', (SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR'), TRUE) "
-                        + "RETURNING id",
-                Long.class, "Gestor " + s, "gestor." + s + "@teste.local");
-
         conjuntoId = criarConjunto("Alertas " + s);
         orgaoId = jdbc.queryForObject("SELECT min(id) FROM orgao", Long.class);
 
@@ -83,14 +95,13 @@ class ComparacaoEvolucaoIntegrationTest {
         grausPorHectare = 0.01 / (metrosQuadrados / 10000.0);
     }
 
-    // ---------- Tarefa 19 ----------
-
     @Test
     @DisplayName("US10 - Tarefa 19: 2023 com 40 ha e 2025 com 70 ha (35 novos, 5 regenerados) dá +30 ha / +75%")
     void deveCalcularSaldoLiquidoAumentoEReducao() throws Exception {
         Cenario c = cenarioPadrao();
 
         mockMvc.perform(post("/analise/comparacao/evolucao")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(corpo(c.safra2023(), c.safra2025(), c.regiao())))
                 .andExpect(status().isOk())
@@ -118,14 +129,13 @@ class ComparacaoEvolucaoIntegrationTest {
         assertThat(r.percentualVariacao()).isCloseTo(75.0, within(0.01));
     }
 
-    // ---------- Tarefa 17 ----------
-
     @Test
     @DisplayName("US10 - Tarefa 17: mesma carga nos dois lados é 400")
     void mesmaCargaEh400() throws Exception {
         Cenario c = cenarioPadrao();
 
         mockMvc.perform(post("/analise/comparacao/evolucao")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(corpo(c.safra2023(), c.safra2023(), c.regiao())))
                 .andExpect(status().isBadRequest());
@@ -139,6 +149,7 @@ class ComparacaoEvolucaoIntegrationTest {
         long cargaOutroConjunto = criarCarga(outroConjunto, "2025", true, faixa("CAR-X", 5, 75));
 
         mockMvc.perform(post("/analise/comparacao/evolucao")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(corpo(c.safra2023(), cargaOutroConjunto, c.regiao())))
                 .andExpect(status().isBadRequest())
@@ -152,6 +163,7 @@ class ComparacaoEvolucaoIntegrationTest {
         long rascunho = criarCarga(conjuntoId, "2025", false, faixa("CAR-R", 5, 75));
 
         mockMvc.perform(post("/analise/comparacao/evolucao")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(corpo(c.safra2023(), rascunho, c.regiao())))
                 .andExpect(status().isForbidden());
@@ -167,24 +179,22 @@ class ComparacaoEvolucaoIntegrationTest {
     @DisplayName("US10 - Tarefa 17: safras sem sobreposição geográfica na região é 422")
     void semSobreposicaoNaRegiaoEh422() throws Exception {
         Cenario c = cenarioPadrao();
-        // mesma safra 2025, mas em outro lugar (~3° a oeste): fora da região do cenário
         long longe = criarCarga(conjuntoId, "2025", true,
                 new Feicao("CAR-LONGE", envelope(-50.0, LAT_SUL, -49.99, LAT_NORTE)));
 
         mockMvc.perform(post("/analise/comparacao/evolucao")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(corpo(c.safra2023(), longe, c.regiao())))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.erro", containsString("sobreposição geográfica")));
 
-        // sem região a janela pega as duas, mas as coberturas continuam sem se encostar
         mockMvc.perform(post("/analise/comparacao/evolucao")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(corpo(c.safra2023(), longe, null)))
                 .andExpect(status().isUnprocessableEntity());
     }
-
-    // ---------- Tarefa 18 ----------
 
     @Test
     @DisplayName("US10 - Tarefa 18: recorte acima do limite seguro é 413 orientando a escolher município/zoom")
@@ -219,15 +229,10 @@ class ComparacaoEvolucaoIntegrationTest {
                 .containsEntry("simplificada", true);
     }
 
-    // ---------- cenário ----------
-
     private record Feicao(String codigo, String wkt) {}
 
     private record Cenario(long safra2023, long safra2025, long regiao) {}
 
-    // Safra 2023: 40 ha em [0, 40] ha da faixa.
-    // Safra 2025: [5, 40] (35 ha que continuam) + [40, 75] (35 ha novos) = 70 ha.
-    // O pedaço [0, 5] some em 2025: são os 5 ha regenerados
     private Cenario cenarioPadrao() {
         long safra2023 = criarCarga(conjuntoId, "2023", true, faixa("CAR-001", 0, 40));
         long safra2025 = criarCarga(conjuntoId, "2025", true,
@@ -298,8 +303,6 @@ class ComparacaoEvolucaoIntegrationTest {
         return processo;
     }
 
-    // instância com limites baixos pros testes da Tarefa 18; usa o mesmo JdbcTemplate,
-    // então enxerga o que foi inserido nessa transação
     private ComparacaoService servico(long limiteSimplificacao, long limiteMaximo) {
         return new ComparacaoService(jdbc, objectMapper, limiteSimplificacao, limiteMaximo, 0.0001);
     }

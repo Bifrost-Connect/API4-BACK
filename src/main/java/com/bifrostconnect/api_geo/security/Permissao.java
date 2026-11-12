@@ -19,6 +19,7 @@ public enum Permissao {
     // dados territoriais
     GEOMETRIA_EDITAR("TERRITORIAL", "Editar geometrias e importar camadas de referência"),
     ANALISE_EXECUTAR("TERRITORIAL", "Rodar cruzamentos territoriais"),
+    COMPARAR_SAFRAS("TERRITORIAL", "Comparar evolução temporal entre safras"), // <-- ADICIONADO AQUI
 
     // gates e publicação (US07)
     CARGA_APROVAR("PUBLICACAO", "Aprovar/reprovar etapas da carga"),

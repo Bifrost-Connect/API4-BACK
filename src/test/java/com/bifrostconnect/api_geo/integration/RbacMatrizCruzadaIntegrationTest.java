@@ -53,9 +53,6 @@ import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-// US13 - Tarefas 18, 19 e 20: respostas 401/403/409, gravação do ACESSO_NEGADO_403, matriz RBAC com
-// tokens trocados e revogação imediata. Roda contra o banco local; tudo volta no rollback.
-// O segredo é fixo aqui pra dar pra assinar um token vencido com a mesma chave da aplicação
 @SpringBootTest(properties = "seguranca.jwt.segredo=" + RbacMatrizCruzadaIntegrationTest.SEGREDO)
 @Transactional
 class RbacMatrizCruzadaIntegrationTest {
@@ -91,8 +88,6 @@ class RbacMatrizCruzadaIntegrationTest {
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
-
-    // ---------- Tarefa 18: respostas HTTP e gravação do 403 ----------
 
     @Test
     @DisplayName("Tarefa 18: 403 grava ACESSO_NEGADO_403 com usuário, endpoint, método e IP")
@@ -187,8 +182,6 @@ class RbacMatrizCruzadaIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
-    // ---------- Tarefa 19: matriz RBAC com tokens trocados ----------
-
     @ParameterizedTest(name = "{0} em {1} {2} → 403")
     @DisplayName("Tarefa 19: investidas nas rotas críticas de cada módulo")
     @CsvSource({
@@ -197,16 +190,16 @@ class RbacMatrizCruzadaIntegrationTest {
             "ANALISTA,           PATCH, /carga/1/cancelar",
             "ANALISTA,           GET,   /carga/1/quarentena/exportar",
             "ANALISTA,           GET,   /carga/download/1",
-            "ANALISTA,           PATCH, /indicadores/1/fechar",
-            "OPERADOR,           PATCH, /indicadores/1/fechar",
+            "ANALISTA,           PATCH, /api/indicadores/1/fechar",
+            "OPERADOR,           PATCH, /api/indicadores/1/fechar",
             "OPERADOR,           POST,  /publicacao/1/aprovar-tratamento",
             "OPERADOR,           POST,  /carga/1/decisao-gestor",
             "OPERADOR,           POST,  /carga/referencias/importar",
             "ADMINISTRADOR,      POST,  /carga/1/decisao-gestor",
             "ADMINISTRADOR,      POST,  /carga/metadados",
-            "ADMINISTRADOR,      PATCH, /indicadores/1/fechar",
+            "ADMINISTRADOR,      PATCH, /api/indicadores/1/fechar",
             "ADMINISTRADOR,      POST,  /publicacao/1/aprovar-tratamento",
-            "AUDITOR,            GET,   /indicadores/1/exportar",
+            "AUDITOR,            GET,   /api/indicadores/1/exportar",
             "AUDITOR,            GET,   /carga/download/1",
             "AUDITOR,            GET,   /carga/1/quarentena/exportar",
             "AUDITOR,            POST,  /carga/1/decisao-gestor",
@@ -289,8 +282,6 @@ class RbacMatrizCruzadaIntegrationTest {
         assertEquals(negadas, registradas);
     }
 
-    // ---------- Tarefa 20: revogação imediata ----------
-
     @Test
     @DisplayName("Tarefa 20: colaborador inativado perde o acesso na requisição seguinte, com o mesmo JWT")
     void colaboradorDesligadoPerdeAcessoNaHora() throws Exception {
@@ -302,7 +293,6 @@ class RbacMatrizCruzadaIntegrationTest {
 
         mudarStatus(colaborador, false, tokenDoAdmin);
 
-        // 401 e não 403: a sessão morreu, então nem chega a olhar a permissão
         mockMvc.perform(comToken(get("/dominios/filtros"), tokenDoColaborador))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(comToken(post("/carga/metadados"), tokenDoColaborador)
@@ -310,7 +300,6 @@ class RbacMatrizCruzadaIntegrationTest {
                 .andExpect(status().isUnauthorized());
         assertEquals(0, acessosNegados(colaborador));
 
-        // nem por outro caminho: login e Basic também recusam
         mockMvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\": \"" + email(colaborador) + "\", \"senha\": \"" + SENHA + "\"}"))
                 .andExpect(status().isUnauthorized());
@@ -334,8 +323,6 @@ class RbacMatrizCruzadaIntegrationTest {
         assertNotNull(tokenNovo);
         mockMvc.perform(comToken(get("/dominios/filtros"), tokenNovo)).andExpect(status().isOk());
     }
-
-    // ---------- apoio ----------
 
     private Map<RequestMappingInfo, HandlerMethod> rotasDoSistema() {
         Map<RequestMappingInfo, HandlerMethod> doSistema = new LinkedHashMap<>();

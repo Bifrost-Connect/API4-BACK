@@ -3,6 +3,8 @@ package com.bifrostconnect.api_geo.controller;
 import com.bifrostconnect.api_geo.dto.LinhagemResponseDTO;
 import com.bifrostconnect.api_geo.entity.Auditoria;
 import com.bifrostconnect.api_geo.repository.AuditoriaRepository;
+import com.bifrostconnect.api_geo.security.Permissao;
+import com.bifrostconnect.api_geo.security.RequirePermission;
 import com.bifrostconnect.api_geo.service.LinhagemService;
 import com.bifrostconnect.api_geo.service.ProcessoService;
 import com.fasterxml.jackson.core.JsonParser;
@@ -10,7 +12,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -20,8 +21,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.bifrostconnect.api_geo.security.Permissao;
-import com.bifrostconnect.api_geo.security.RequirePermission;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -36,8 +35,8 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/indicadores")
-@RequiredArgsConstructor
+// Mantemos a rota padronizada
+@RequestMapping("/api/indicadores")
 public class IndicadorController {
 
     // Tarefa 14: código gravado em auditoria.acao para cada exportação gerada
@@ -50,6 +49,20 @@ public class IndicadorController {
     private final JdbcTemplate jdbcTemplate;
     private final AuditoriaRepository auditoriaRepository;
     private final ObjectMapper objectMapper;
+
+    // Construtor manual incluindo todas as dependências final para injeção do Spring Boot
+    public IndicadorController(
+            LinhagemService linhagemService,
+            ProcessoService processoService,
+            JdbcTemplate jdbcTemplate,
+            AuditoriaRepository auditoriaRepository,
+            ObjectMapper objectMapper) {
+        this.linhagemService = linhagemService;
+        this.processoService = processoService;
+        this.jdbcTemplate = jdbcTemplate;
+        this.auditoriaRepository = auditoriaRepository;
+        this.objectMapper = objectMapper;
+    }
 
     @RequirePermission(Permissao.LINHAGEM_CONSULTAR)
     @GetMapping("/{id}/linhagem")
@@ -70,13 +83,10 @@ public class IndicadorController {
         return ResponseEntity.noContent().build();
     }
 
-    // Tarefa 7 (API de Exportação): Rota GET /api/indicadores/{id}/exportar (ou /versoes/{id}/exportar)
-<<<<<<< Updated upstream
-    @RequirePermission(Permissao.RELATORIO_EXPORTAR)
-=======
+    // Tarefa 7 (API de Exportação): Rota GET /api/indicadores/{id}/exportar
     // Tarefa 14: toda exportação gerada é registrada na tabela auditoria (gestor, versão, formato,
     // filtros, contagem de linhas e data/hora). Se o registro falhar, o arquivo não é entregue.
->>>>>>> Stashed changes
+    @RequirePermission(Permissao.RELATORIO_EXPORTAR)
     @GetMapping("/{id}/exportar")
     public ResponseEntity<Resource> exportarVersao(
             @PathVariable Long id,
@@ -304,13 +314,14 @@ public class IndicadorController {
 
     // devolve o motivo no formato { "erro": ... } (só vale para este controller)
     @ExceptionHandler(ExportacaoAuditoriaException.class)
-    public ResponseEntity<Map<String, String>> handleExportacaoAuditoria(ExportacaoAuditoriaException ex) {
-        Map<String, String> error = new HashMap<>();
-        error.put("erro", ex.getMessage());
+    public ResponseEntity <Map<String, String>> handleExportacaoAuditoria(ExportacaoAuditoriaException ex) {
+    
+    Map<String, String> error = new HashMap<>();
+    error.put("erro", ex.getMessage());
 
-        return ResponseEntity
-                .status(ex.getStatus())
-                .body(error);
+    return ResponseEntity
+            .status(ex.getStatus())
+            .body(error);
     }
 
     private static class ExportacaoAuditoriaException extends RuntimeException {
