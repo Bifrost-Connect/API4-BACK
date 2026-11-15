@@ -53,7 +53,13 @@ class ConsolidacaoPublicacaoIntegrationTest {
     // 2. Adicionado o método para simular o "rollback" limpando os dados de forma segura após o teste
     @AfterEach
     void tearDown() {
-        jdbcTemplate.execute("TRUNCATE TABLE processo CASCADE");
+        // o CASCADE chega no log_exportacoes_relatorios (V36), que barra TRUNCATE por ser auditoria
+        jdbcTemplate.execute("ALTER TABLE log_exportacoes_relatorios DISABLE TRIGGER trg_bloquear_truncate_log_exportacoes");
+        try {
+            jdbcTemplate.execute("TRUNCATE TABLE processo CASCADE");
+        } finally {
+            jdbcTemplate.execute("ALTER TABLE log_exportacoes_relatorios ENABLE TRIGGER trg_bloquear_truncate_log_exportacoes");
+        }
     }
 
     @Test

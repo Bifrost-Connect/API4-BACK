@@ -32,6 +32,8 @@ import org.springframework.web.context.WebApplicationContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+// US13 - Tarefas 14 a 17: motor RBAC, SoD no servidor, revogação de sessão e proteção do último admin.
+// Roda contra o banco local com a V41 aplicada; tudo volta no rollback do @Transactional
 @SpringBootTest
 @Transactional
 class RbacSegurancaIntegrationTest {
@@ -56,6 +58,8 @@ class RbacSegurancaIntegrationTest {
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
+
+    // ---------- Tarefa 14: nenhuma rota aberta ----------
 
     @Test
     @DisplayName("Tarefa 14: rota protegida sem credencial devolve 401")
@@ -87,6 +91,8 @@ class RbacSegurancaIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    // ---------- Tarefa 15: Segregação de Funções ----------
+
     @Nested
     @DisplayName("Tarefa 15: Administrador")
     class Administrador {
@@ -101,7 +107,7 @@ class RbacSegurancaIntegrationTest {
                     .andExpect(status().isForbidden());
             mockMvc.perform(post("/publicacao/1/aprovar-tratamento").contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
-            mockMvc.perform(patch("/api/indicadores/1/fechar").contentType(MediaType.APPLICATION_JSON).content("{}"))
+            mockMvc.perform(patch("/indicadores/1/fechar").contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
             mockMvc.perform(post("/carga/referencias/importar"))
                     .andExpect(status().isForbidden());
@@ -132,7 +138,7 @@ class RbacSegurancaIntegrationTest {
                     .andExpect(status().isForbidden());
             mockMvc.perform(get("/carga/1/rejeicoes/exportar"))
                     .andExpect(status().isForbidden());
-            mockMvc.perform(get("/api/indicadores/1/exportar"))
+            mockMvc.perform(get("/indicadores/1/exportar"))
                     .andExpect(status().isForbidden());
             mockMvc.perform(post("/carga/1/decisao-gestor").contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
@@ -159,7 +165,7 @@ class RbacSegurancaIntegrationTest {
                     .andExpect(status().isForbidden());
             mockMvc.perform(post("/publicacao/1/aprovar-tratamento").contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
-            mockMvc.perform(patch("/api/indicadores/1/fechar").contentType(MediaType.APPLICATION_JSON).content("{}"))
+            mockMvc.perform(patch("/indicadores/1/fechar").contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
             mockMvc.perform(post("/carga/referencias/importar"))
                     .andExpect(status().isForbidden());
@@ -174,6 +180,7 @@ class RbacSegurancaIntegrationTest {
 
             int alertasAntes = contarAlertasSod(operadorId);
 
+            // carga inexistente: se passou da autorização o erro é outro, nunca 403
             int status = mockMvc.perform(comToken(post("/publicacao/{id}/aprovar-tratamento", Long.MAX_VALUE), token)
                             .contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andReturn().getResponse().getStatus();
@@ -196,7 +203,7 @@ class RbacSegurancaIntegrationTest {
                     .andExpect(status().isForbidden());
             mockMvc.perform(patch("/carga/1/cancelar").contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
-            mockMvc.perform(patch("/api/indicadores/1/fechar").contentType(MediaType.APPLICATION_JSON).content("{}"))
+            mockMvc.perform(patch("/indicadores/1/fechar").contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
             mockMvc.perform(post("/carga/1/decisao-gestor").contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
@@ -211,11 +218,15 @@ class RbacSegurancaIntegrationTest {
         Long usuarioId = criarUsuario("ANALISTA");
         String token = login(usuarioId);
 
+        // muda o perfil direto no banco sem mexer na versao_sessao: o token continua válido,
+        // mas a permissão é recalculada pelo perfil novo (Auditor não acessa /admin)
         jdbc.update("UPDATE usuario SET perfil_id = (SELECT id FROM perfil WHERE nome = 'AUDITOR') WHERE id = ?", usuarioId);
 
         mockMvc.perform(comToken(get("/processos/metricas"), token)).andExpect(status().isOk());
         mockMvc.perform(comToken(get("/admin/usuarios"), token)).andExpect(status().isForbidden());
     }
+
+    // ---------- Tarefa 16: revogação instantânea ----------
 
     @Test
     @DisplayName("Tarefa 16: colaborador inativado perde o token na hora (401)")
@@ -249,6 +260,7 @@ class RbacSegurancaIntegrationTest {
 
         mockMvc.perform(comToken(get("/dominios/filtros"), tokenAntigo)).andExpect(status().isUnauthorized());
 
+        // login novo já sai com o perfil novo
         mockMvc.perform(comToken(get("/dominios/filtros"), login(usuarioId))).andExpect(status().isOk());
     }
 
@@ -263,11 +275,13 @@ class RbacSegurancaIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    // ---------- Tarefa 17: escalonamento e último admin ----------
+
     @Test
     @DisplayName("Tarefa 17: Administrador não altera o próprio cargo nem o próprio status (403)")
     void adminNaoAlteraASiMesmo() throws Exception {
         Long adminId = criarUsuario("ADMINISTRADOR");
-        criarUsuario("ADMINISTRADOR");
+        criarUsuario("ADMINISTRADOR"); // tem outro admin, então não é a regra do último admin
         String token = login(adminId);
 
         mockMvc.perform(comToken(patch("/admin/usuarios/{id}/status", adminId), token)
@@ -299,6 +313,7 @@ class RbacSegurancaIntegrationTest {
                         .content("{\"perfilId\": " + perfilId("GESTOR") + "}"))
                 .andExpect(status().isConflict());
 
+        // com um segundo admin ativo a troca passa
         criarUsuario("ADMINISTRADOR");
         mockMvc.perform(put("/admin/usuarios/{id}/permissoes", ultimoAdmin)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -323,6 +338,8 @@ class RbacSegurancaIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.excecao_sod_autorizada").value(true));
     }
+
+    // ---------- apoio ----------
 
     private Long criarUsuario(String perfil) {
         String sufixo = String.valueOf(ThreadLocalRandom.current().nextInt(100_000_000, 999_999_999));

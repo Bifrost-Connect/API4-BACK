@@ -14,6 +14,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.bifrostconnect.api_geo.service.CatalogoBasesService;
+
 @SpringBootTest
 @Transactional
 class CatalogoDesempenhoIntegrationTest {
@@ -51,10 +53,8 @@ class CatalogoDesempenhoIntegrationTest {
         jdbcTemplate.execute("ANALYZE processo");
 
         // mesma consulta que a listagem monta com busca + conjunto + ano + situação + ordenação + página
-        List<String> plano = jdbcTemplate.queryForList("""
-                EXPLAIN ANALYZE
-                SELECT v.*
-                  FROM vw_catalogo_bases_operacional v
+        List<String> plano = jdbcTemplate.queryForList(
+                "EXPLAIN ANALYZE SELECT v.*" + CatalogoBasesService.FROM_CATALOGO + """
                  WHERE (v.conjunto ILIKE '%desempenho%' OR v.orgao ILIKE '%desempenho%' OR v.orgao_sigla ILIKE '%desempenho%'
                         OR v.ano_safra ILIKE '%desempenho%' OR v.cobertura_espacial ILIKE '%desempenho%')
                    AND v.conjunto_id = ?

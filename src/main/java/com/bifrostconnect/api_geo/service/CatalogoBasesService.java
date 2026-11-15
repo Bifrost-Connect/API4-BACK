@@ -25,7 +25,25 @@ public class CatalogoBasesService {
     public static final int TAMANHO_PADRAO = 20;
     public static final int TAMANHO_MAXIMO = 100;
 
-    private static final String FROM_CATALOGO = " FROM vw_catalogo_bases_operacional v ";
+    // a view é a da V30 (Vitor): devolve processo_id e situacao_atual, e a safra_vigente vem gravada
+    // pelo banco no fechamento da versão (grupo conjunto + órgão). Aqui só traduz pros nomes que a API
+    // já devolvia (id, situacao) e calcula o status_operacional que a tela usa no filtro de situação.
+    // pronta_para_consulta e safra_vigente continuam vindo do banco, sem recalcular nada
+    public static final String FROM_CATALOGO = """
+             FROM (SELECT c.processo_id AS id, c.conjunto_id, c.conjunto, c.orgao_id, c.orgao, c.orgao_sigla,
+                          c.ano_safra, c.competencia, c.formato, c.classificacao_acesso, c.cobertura_espacial,
+                          c.cobertura_temporal_inicio, c.cobertura_temporal_fim, c.epsg_destino,
+                          c.etapa_atual, c.situacao_atual AS situacao, c.versao_oficial, c.versao_fechada,
+                          c.data_publicacao, c.data_criacao, c.pronta_para_consulta,
+                          c.pronta_para_consulta AS disponivel, c.safra_vigente,
+                          CASE
+                              WHEN c.pronta_para_consulta                       THEN 'DISPONIVEL'
+                              WHEN c.situacao_atual = 'EM_VALIDACAO'            THEN 'EM_QUARENTENA'
+                              WHEN c.situacao_atual IN ('FALHOU', 'FECHADO')    THEN 'INDISPONIVEL'
+                              ELSE 'EM_PROCESSAMENTO'
+                          END AS status_operacional
+                     FROM vw_catalogo_bases_operacional c) v
+            """;
 
     // ordenação vem do front, então só aceita o que está aqui (nada de concatenar texto livre no SQL)
     private static final Map<String, String> ORDENACOES = Map.of(

@@ -4,8 +4,11 @@ import com.bifrostconnect.api_geo.dto.ExportacaoMetricaDTO;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -17,9 +20,7 @@ public class CsvExportService {
         
         // Tarefa 10: Escrever o BOM (Byte Order Mark) para UTF-8. 
         // Isto força o Excel a reconhecer a codificação corretamente.
-        out.write(0xEF);
-        out.write(0xBB);
-        out.write(0xBF);
+        escreverBom(out);
 
         try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
             
@@ -41,15 +42,26 @@ public class CsvExportService {
         return out.toByteArray();
     }
 
-    /**
-     * Tratamento de escape de caracteres especiais (aspas, ponto-e-vírgula e quebras de linha)
-     */
-    private String escapar(String valor) {
+    // US11 - Tarefa 12: público pra exportação em streaming (ExportacaoService) escrever o BOM
+    // direto na resposta, sem montar o arquivo inteiro em memória
+    public void escreverBom(OutputStream out) {
+        try {
+            out.write(0xEF);
+            out.write(0xBB);
+            out.write(0xBF);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    // Tratamento de escape de caracteres especiais (aspas, ponto-e-vírgula e quebras de linha).
+    // Público pela mesma razão do escreverBom
+    public String escapar(String valor) {
         if (valor == null) {
             return "";
         }
         // Se contiver os caracteres problemáticos para CSV, aplicamos o escape padrão
-        if (valor.contains(";") || valor.contains("\"") || valor.contains("\n")) {
+        if (valor.contains(";") || valor.contains("\"") || valor.contains("\n") || valor.contains("\r")) {
             valor = valor.replace("\"", "\"\"");
             return "\"" + valor + "\"";
         }

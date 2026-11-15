@@ -60,7 +60,7 @@ public class AcessoNegadoHandler implements AccessDeniedHandler {
 
         Optional<EstadoUsuario> usuario = usuarioSessaoService.buscarPorLogin(login);
 
-        // usuário de memória não tem id: o login fica só nos detalhes (V32)
+        // usuário de memória não tem id: o login fica só nos detalhes (V42)
         jdbc.update("""
                 INSERT INTO auditoria (usuario_id, processo_id, acao, descricao, detalhes, data_hora, ip)
                 VALUES (?, NULL, 'ACESSO_NEGADO_403', ?, ?, now(), ?)
