@@ -33,7 +33,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 // US13 - Tarefas 14 a 17: motor RBAC, SoD no servidor, revogação de sessão e proteção do último admin.
-// Roda contra o banco local com a V31 aplicada; tudo volta no rollback do @Transactional
+// Roda contra o banco local com a V41 aplicada; tudo volta no rollback do @Transactional
 @SpringBootTest
 @Transactional
 class RbacSegurancaIntegrationTest {

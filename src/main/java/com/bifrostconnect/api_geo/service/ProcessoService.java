@@ -8,8 +8,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -574,41 +572,8 @@ public class ProcessoService {
         } catch (Exception ignored) {
         }
 
-        try {
-            jdbcTemplate.execute("SELECT fn_atualizar_dados_publicados()");
-        } catch (Exception ignored) {
-        }
-    }
-
-    public Resource exportarArquivoConsolidado(Long id, String formato) {
-        Processo processo = buscarPorId(id);
-
-        try {
-            Path pastaProcessada = Path.of("zona_processada_storage");
-            if (!Files.exists(pastaProcessada)) {
-                Files.createDirectories(pastaProcessada);
-            }
-
-            String extensao = formato != null && formato.equalsIgnoreCase("csv") ? "csv" : "geojson";
-            String nomeArquivo = id + "_exportado." + extensao;
-            Path caminhoArquivo = pastaProcessada.resolve(nomeArquivo);
-
-            if (!Files.exists(caminhoArquivo)) {
-                String conteudo = extensao.equals("csv")
-                    ? "id,situacao_atual_id,data_criacao\n" + processo.getId() + "," + processo.getSituacaoAtualId() + "," + processo.getDataCriacao()
-                    : "{\"type\": \"FeatureCollection\", \"features\": []}";
-                Files.writeString(caminhoArquivo, conteudo);
-            }
-
-            Resource recurso = new UrlResource(caminhoArquivo.toUri());
-            if (recurso.exists() && recurso.isReadable()) {
-                return recurso;
-            } else {
-                throw new RuntimeException("Não foi possível ler o arquivo exportado.");
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Erro ao gerar exportação para o processo ID: " + id, e);
-        }
+        // o mapa (vw_dados_publicados_mapa) não precisa de refresh manual: a trigger
+        // tg_atualiza_mapa_ao_publicar da V26 já roda quando a versão fecha
     }
 
     private Processo salvarGarantindoCampos(Processo processo) {

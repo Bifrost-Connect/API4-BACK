@@ -19,12 +19,15 @@ public enum Permissao {
     // dados territoriais
     GEOMETRIA_EDITAR("TERRITORIAL", "Editar geometrias e importar camadas de referência"),
     ANALISE_EXECUTAR("TERRITORIAL", "Rodar cruzamentos territoriais"),
+    COMPARAR_SAFRAS("TERRITORIAL", "Comparar evolução temporal entre safras"),
 
     // gates e publicação (US07)
     CARGA_APROVAR("PUBLICACAO", "Aprovar/reprovar etapas da carga"),
     VERSAO_PUBLICAR("PUBLICACAO", "Fechar e publicar versão oficial"),
     PUBLICACAO_CONSULTAR("PUBLICACAO", "Revisar pacote de publicação e histórico de decisões"),
     RELATORIO_EXPORTAR("PUBLICACAO", "Exportar versão publicada"),
+    // US11 - Tarefa 13: quem vê o histórico de downloads de todo mundo (auditoria das exportações)
+    EXPORTACAO_HISTORICO_CONSULTAR("PUBLICACAO", "Consultar histórico de exportações"),
 
     // consumo
     CATALOGO_CONSULTAR("CONSUMO", "Consultar catálogo de bases"),

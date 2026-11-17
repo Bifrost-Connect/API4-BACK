@@ -58,8 +58,15 @@ class ArquivoControllerTest {
     void setUp() {
         this.mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
 
-        // Limpeza com TRUNCATE CASCADE para ignorar as triggers de bloqueio de DELETE (imutabilidade)
-        jdbcTemplate.execute("TRUNCATE TABLE processo, arquivo_original, arquivo_processado, feicao_carga, resultados_calculos, historico_aprovacoes_gestor, log_processamento, log_validacao, auditoria, processo_etapa CASCADE");
+        // Limpeza com TRUNCATE CASCADE para ignorar as triggers de bloqueio de DELETE (imutabilidade).
+        // O CASCADE chega no log_exportacoes_relatorios (V36), que barra TRUNCATE por ser auditoria:
+        // desliga só esse trigger durante a limpeza e religa no finally
+        jdbcTemplate.execute("ALTER TABLE log_exportacoes_relatorios DISABLE TRIGGER trg_bloquear_truncate_log_exportacoes");
+        try {
+            jdbcTemplate.execute("TRUNCATE TABLE processo, arquivo_original, arquivo_processado, feicao_carga, resultados_calculos, historico_aprovacoes_gestor, log_processamento, log_validacao, auditoria, processo_etapa CASCADE");
+        } finally {
+            jdbcTemplate.execute("ALTER TABLE log_exportacoes_relatorios ENABLE TRIGGER trg_bloquear_truncate_log_exportacoes");
+        }
 
         // Insere todas as etapas exigidas pelo fluxo de processamento
         jdbcTemplate.update("INSERT INTO etapa (id, nome, ordem, descricao) VALUES (1, 'CARGA_E_VALIDACAO', 1, 'Carga') ON CONFLICT (id) DO NOTHING;");

@@ -145,10 +145,8 @@ public class GestorDecisaoService {
                 } catch (Exception ignored) {
                 }
 
-                try {
-                    jdbcTemplate.execute("SELECT fn_atualizar_dados_publicados()");
-                } catch (Exception ignored) {
-                }
+                // o mapa (vw_dados_publicados_mapa) não precisa de refresh manual: a trigger
+                // tg_atualiza_mapa_ao_publicar da V26 já roda quando a versão fecha
             }
 
         } else {
