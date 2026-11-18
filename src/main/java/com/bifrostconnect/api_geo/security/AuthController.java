@@ -56,7 +56,9 @@ public class AuthController {
         dadosUsuario.put("nome", usuario.nome());
         dadosUsuario.put("email", usuario.email());
         dadosUsuario.put("perfil", usuario.perfil());
-        dadosUsuario.put("permissoes", MatrizPermissoes.permissoesDo(usuario.perfil()));
+        dadosUsuario.put("permissoes", usuarioSessaoService.permissoesEfetivas(usuario));
+        dadosUsuario.put("permissoes_customizadas", usuario.permissoesCustomizadas());
+        dadosUsuario.put("excecao_sod_autorizada", usuario.excecaoSod());
 
         Map<String, Object> resposta = new LinkedHashMap<>();
         resposta.put("token", token.token());
