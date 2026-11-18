@@ -225,6 +225,9 @@ public class UsuarioSessaoService {
                 Map.entry("USUARIOS:ATRIBUIR_PERMISSAO", EnumSet.of(Permissao.USUARIO_GERENCIAR)),
                 Map.entry("AUDITORIA:VISUALIZAR_LOGS", EnumSet.of(Permissao.GOVERNANCA_CONSULTAR)),
                 Map.entry("AUDITORIA:VISUALIZAR_ALTERACOES", EnumSet.of(Permissao.GOVERNANCA_CONSULTAR)),
-                Map.entry("ROLES:VISUALIZAR", EnumSet.of(Permissao.GOVERNANCA_CONSULTAR)));
+                Map.entry("ROLES:VISUALIZAR", EnumSet.of(Permissao.GOVERNANCA_CONSULTAR)),
+                Map.entry("API:VISUALIZAR_CHAVES", EnumSet.of(Permissao.CHAVE_API_GERENCIAR)),
+                Map.entry("API:GERAR_CHAVE", EnumSet.of(Permissao.CHAVE_API_GERENCIAR)),
+                Map.entry("API:REVOGAR_CHAVE", EnumSet.of(Permissao.CHAVE_API_GERENCIAR)));
     }
 }

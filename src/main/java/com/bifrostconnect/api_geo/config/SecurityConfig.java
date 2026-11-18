@@ -24,6 +24,8 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 import org.springframework.security.config.http.SessionCreationPolicy;
 
 import com.bifrostconnect.api_geo.security.AcessoNegadoHandler;
+import com.bifrostconnect.api_geo.security.ApiKeyAuthService;
+import com.bifrostconnect.api_geo.security.ApiKeyAuthenticationFilter;
 import com.bifrostconnect.api_geo.security.JwtAuthenticationFilter;
 import com.bifrostconnect.api_geo.security.JwtService;
 import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
@@ -74,6 +76,7 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtService jwtService,
             UsuarioSessaoService usuarioSessaoService,
+            ApiKeyAuthService apiKeyAuthService,
             AcessoNegadoHandler acessoNegadoHandler)
             throws Exception {
 
@@ -88,6 +91,9 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .exceptionHandling(e -> e.accessDeniedHandler(acessoNegadoHandler))
+            .addFilterBefore(
+                new ApiKeyAuthenticationFilter(apiKeyAuthService),
+                BasicAuthenticationFilter.class)
             .addFilterBefore(
                 new JwtAuthenticationFilter(jwtService, usuarioSessaoService),
                 BasicAuthenticationFilter.class)
