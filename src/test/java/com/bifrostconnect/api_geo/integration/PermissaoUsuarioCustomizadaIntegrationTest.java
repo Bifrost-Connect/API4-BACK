@@ -373,6 +373,41 @@ class PermissaoUsuarioCustomizadaIntegrationTest {
                 .andExpect(jsonPath("$.content[0].usuario_email").value(email(analistaId)));
     }
 
+    @ParameterizedTest(name = "Subpermissão {0} concede CHAVE_API_GERENCIAR para ANALISTA, mas não para AUDITOR")
+    @DisplayName("Subpermissões API:* liberam CHAVE_API_GERENCIAR exceto para AUDITOR")
+    @CsvSource({
+            "API:VISUALIZAR_CHAVES",
+            "API:GERAR_CHAVE",
+            "API:REVOGAR_CHAVE"
+    })
+    void subpermissoesApiChaveGerenciarRespeitamTravaDoAuditor(String subpermissao) throws Exception {
+        Long analistaId = criarUsuario("ANALISTA");
+        Long auditorId = criarUsuario("AUDITOR");
+        String tokenAdmin = tokenDo(login(email(criarUsuario("ADMINISTRADOR")), SENHA));
+
+        mockMvc.perform(comToken(put("/admin/usuarios/{id}/permissoes", analistaId), tokenAdmin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "permissoesCustomizadas", List.of(subpermissao)))))
+                .andExpect(status().isOk());
+
+        JsonNode loginAnalista = login(email(analistaId), SENHA);
+        assertTrue(extrairSet(loginAnalista.get("usuario").get("permissoes")).contains("CHAVE_API_GERENCIAR"));
+        mockMvc.perform(comToken(get("/admin/chaves-api"), tokenDo(loginAnalista)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(comToken(put("/admin/usuarios/{id}/permissoes", auditorId), tokenAdmin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "permissoesCustomizadas", List.of(subpermissao)))))
+                .andExpect(status().isOk());
+
+        JsonNode loginAuditor = login(email(auditorId), SENHA);
+        assertFalse(extrairSet(loginAuditor.get("usuario").get("permissoes")).contains("CHAVE_API_GERENCIAR"));
+        mockMvc.perform(comToken(get("/admin/chaves-api"), tokenDo(loginAuditor)))
+                .andExpect(status().isForbidden());
+    }
+
     private Long criarUsuario(String perfil) {
         String sufixo = String.valueOf(ThreadLocalRandom.current().nextInt(100_000_000, 999_999_999));
         return jdbc.queryForObject("""
