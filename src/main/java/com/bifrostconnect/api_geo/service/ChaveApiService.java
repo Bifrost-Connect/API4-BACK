@@ -26,6 +26,7 @@ import com.bifrostconnect.api_geo.security.UsuarioSessaoService.EstadoUsuario;
 import com.bifrostconnect.api_geo.service.ChaveApiCriptoService.ChaveGerada;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.bifrostconnect.api_geo.security.ApiKeyAuthService;
 
 // Tarefa 11: ciclo de vida das chaves (emitir, listar, revogar) sobre a tabela chaves_api (V39).
 // Só grava o hash SHA-256 e o prefixo; a chave em texto aparece apenas na resposta da emissão.
@@ -51,17 +52,20 @@ public class ChaveApiService {
     private final JdbcTemplate jdbc;
     private final ChaveApiCriptoService cripto;
     private final UsuarioSessaoService usuarioSessaoService;
+    private final ApiKeyAuthService apiKeyAuthService;
     private final ObjectMapper objectMapper;
 
     public ChaveApiService(
             JdbcTemplate jdbc,
             ChaveApiCriptoService cripto,
             UsuarioSessaoService usuarioSessaoService,
+            ApiKeyAuthService apiKeyAuthService,
             ObjectMapper objectMapper) {
 
         this.jdbc = jdbc;
         this.cripto = cripto;
         this.usuarioSessaoService = usuarioSessaoService;
+        this.apiKeyAuthService = apiKeyAuthService;
         this.objectMapper = objectMapper;
     }
 
@@ -158,6 +162,7 @@ public class ChaveApiService {
     // PATCH /integracoes/chaves/{id}/revogar
     // Efeito imediato: o status vira REVOGADA na própria transação (quem autentica só aceita ATIVA).
     // Se a chave já estava revogada, nada muda e a data original da revogação é preservada.
+    // PATCH /integracoes/chaves/{id}/revogar
     @Transactional
     public Map<String, Object> revogar(Long id, String login) {
 
@@ -171,6 +176,9 @@ public class ChaveApiService {
                  WHERE id = ?
                    AND status <> 'REVOGADA'
                 """, usuarioId, id);
+
+        // Tarefa 15: invalida o cache em memória imediatamente, sem delay
+        apiKeyAuthService.invalidarCachePorId(id);
 
         Map<String, Object> resposta = buscarMetadados(id);
         resposta.put("revogada_agora", alteradas > 0);
