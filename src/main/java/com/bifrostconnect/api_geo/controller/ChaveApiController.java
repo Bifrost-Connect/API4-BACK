@@ -23,11 +23,11 @@ import com.bifrostconnect.api_geo.service.ChaveApiService;
 import jakarta.validation.Valid;
 
 // Tarefa 11: ciclo de vida das chaves de API (rotas finais: /api/integracoes/chaves...).
-// Usa a permissão que já existe (USUARIO_GERENCIAR, só ADMINISTRADOR): hoje o perfil Integrador
-// não existe na tabela perfil, então não foi preciso criar permissão nova nem mexer na MatrizPermissoes.
+// US12 - Tarefa 16: CHAVE_API_GERENCIAR vale pro Administrador e pro INTEGRADOR_EXTERNO. O integrador
+// só enxerga e revoga as próprias chaves (a checagem do dono fica no ChaveApiService)
 @RestController
 @RequestMapping("/integracoes/chaves")
-@RequirePermission(Permissao.USUARIO_GERENCIAR)
+@RequirePermission(Permissao.CHAVE_API_GERENCIAR)
 public class ChaveApiController {
 
     private final ChaveApiService service;
@@ -52,9 +52,10 @@ public class ChaveApiController {
     public Map<String, Object> listar(
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            Authentication auth) {
 
-        return service.listar(status, page, size);
+        return service.listar(status, page, size, auth.getName());
     }
 
     @PatchMapping("/{id}/revogar")

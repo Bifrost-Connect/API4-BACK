@@ -34,7 +34,10 @@ public enum Permissao {
 
     // administração (US13)
     USUARIO_GERENCIAR("ADMINISTRACAO", "Cadastrar, inativar e trocar perfil de usuários"),
-    GOVERNANCA_CONSULTAR("ADMINISTRACAO", "Matriz de permissões e logs de segurança");
+    GOVERNANCA_CONSULTAR("ADMINISTRACAO", "Matriz de permissões e logs de segurança"),
+
+    // integração externa (US12)
+    CHAVE_API_GERENCIAR("INTEGRACAO", "Emitir, listar e revogar as próprias chaves de API (Administrador: todas)");
 
     private final String modulo;
     private final String descricao;

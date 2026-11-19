@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.bifrostconnect.api_geo.exception.ErroPadronizadoException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -189,8 +190,9 @@ public class ExternoConsumoService {
 
         Map<String, Object> base = linhas.get(0);
         if (!Boolean.TRUE.equals(base.get("versao_fechada"))) {
-            throw new ResponseStatusException(
+            throw new ErroPadronizadoException(
                     HttpStatus.FORBIDDEN,
+                    "BASE_NAO_PUBLICADA",
                     "Acesso negado: apenas bases com versão oficial publicada estão disponíveis para consumo externo.");
         }
 

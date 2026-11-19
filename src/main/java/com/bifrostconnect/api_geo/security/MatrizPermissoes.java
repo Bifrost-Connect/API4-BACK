@@ -22,7 +22,8 @@ public final class MatrizPermissoes {
 
     static {
         MATRIZ.put("ADMINISTRADOR", uniao(CONSUMO, EnumSet.of(
-                USUARIO_GERENCIAR, GOVERNANCA_CONSULTAR, CARGA_CONSULTAR, PUBLICACAO_CONSULTAR)));
+                USUARIO_GERENCIAR, GOVERNANCA_CONSULTAR, CARGA_CONSULTAR, PUBLICACAO_CONSULTAR,
+                CHAVE_API_GERENCIAR)));
 
         MATRIZ.put("OPERADOR", uniao(CONSUMO, EnumSet.of(
                 CARGA_ENVIAR, CARGA_CANCELAR, CARGA_CONSULTAR, ARQUIVO_BAIXAR,
@@ -39,7 +40,9 @@ public final class MatrizPermissoes {
 
         MATRIZ.put("ANALISTA", uniao(CONSUMO, EnumSet.of(ANALISE_EXECUTAR, RELATORIO_EXPORTAR)));
 
-        MATRIZ.put("INTEGRADOR_EXTERNO", EnumSet.of(CATALOGO_CONSULTAR, MAPA_CONSULTAR, RELATORIO_EXPORTAR));
+        // US12 - Tarefa 16: o integrador cuida das próprias chaves; mexer na chave de outro dá 403 (ChaveApiService)
+        MATRIZ.put("INTEGRADOR_EXTERNO", EnumSet.of(
+                CATALOGO_CONSULTAR, MAPA_CONSULTAR, RELATORIO_EXPORTAR, CHAVE_API_GERENCIAR));
     }
 
     // o que a exceção SoD (usuario.excecao_sod_autorizada) libera pro Operador.

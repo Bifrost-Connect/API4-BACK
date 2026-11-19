@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
+import com.bifrostconnect.api_geo.exception.ErroPadronizadoException;
 import com.bifrostconnect.api_geo.security.ApiKeyAuthService.ContextoApiKey;
 import com.bifrostconnect.api_geo.security.ApiKeyAuthenticationFilter;
 import com.bifrostconnect.api_geo.security.RotaPublica;
@@ -70,7 +70,8 @@ public class ExternoConsumoController {
     private void exigirEscopo(HttpServletRequest request, String... escoposAceitos) {
         Object attr = request.getAttribute(ApiKeyAuthenticationFilter.ATTR_CONTEXTO_API_KEY);
         if (!(attr instanceof ContextoApiKey contexto)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "API Key não autenticada.");
+            throw new ErroPadronizadoException(
+                    HttpStatus.UNAUTHORIZED, "API_KEY_AUSENTE", "Informe a API Key no header X-API-Key.");
         }
 
         for (String escopo : escoposAceitos) {
@@ -79,8 +80,11 @@ public class ExternoConsumoController {
             }
         }
 
-        throw new ResponseStatusException(
+        // Tarefa 16: chave válida, mas sem o escopo da rota -> 403 (e não 401: não adianta autenticar de novo)
+        throw new ErroPadronizadoException(
                 HttpStatus.FORBIDDEN,
-                "A API Key não possui escopo autorizado para acessar este recurso.");
+                "ESCOPO_INSUFICIENTE",
+                "A API Key não possui o escopo exigido por esta rota. Escopos aceitos: "
+                        + String.join(", ", escoposAceitos) + ".");
     }
 }
