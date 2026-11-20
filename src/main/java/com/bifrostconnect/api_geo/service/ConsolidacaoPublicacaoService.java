@@ -3,7 +3,8 @@ package com.bifrostconnect.api_geo.service;
 import com.bifrostconnect.api_geo.dto.LinhagemResponseDTO;
 import com.bifrostconnect.api_geo.entity.Processo;
 import com.bifrostconnect.api_geo.repository.ProcessoRepository;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonEncoding;
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessException;
@@ -13,13 +14,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.PreparedStatement;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -133,7 +138,6 @@ public class ConsolidacaoPublicacaoService {
         Long copiaId = ((Number) copias.get(0).get("id")).longValue();
         Long arquivoOriginalId = ((Number) copias.get(0).get("arquivo_original_id")).longValue();
 
-        Map<String, Object> pacote = montarFeatureCollection(copiaId);
         Map<String, Object> totais = calcularTotais(copiaId);
         LinhagemResponseDTO linhagem = linhagemService.buscarLinhagem(processoId);
 
@@ -150,49 +154,46 @@ public class ConsolidacaoPublicacaoService {
         metadados.put("dataConsolidacao", agora);
         metadados.putAll(totais);
 
-        // "metadados" e "linhagem" entram como foreign members, que a RFC 7946 permite
-        // (o leitor de GeoJSON que não conhece ignora e o mapa continua funcionando)
-        pacote.put("metadados", metadados);
-        pacote.put("linhagem", linhagem);
-
-        byte[] conteudo;
-        try {
-            conteudo = objectMapper.writeValueAsString(pacote).getBytes(StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new IllegalStateException("Não deu pra serializar o pacote de publicação.", e);
-        }
-
         Integer proximaVersao = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(MAX(versao), 0) + 1 FROM arquivo_processado WHERE processo_id = ?",
                 Integer.class, processoId);
         String nomeArquivo = processoId + "_pacote_publicacao_v" + proximaVersao + ".geojson";
         Path caminho = PASTA_PROCESSADA.resolve(nomeArquivo);
-        String hash = sha256(conteudo);
+        Path caminhoTemp = PASTA_PROCESSADA.resolve(nomeArquivo + ".tmp");
 
-        // o pacote vira uma cópia nova gerada na etapa PUBLICACAO. Ela não tem feicao_carga,
-        // então a vw_copia_vigente continua apontando pra cópia tratada (de propósito)
-        Long pacoteId = jdbcTemplate.queryForObject("""
-            INSERT INTO arquivo_processado
-                (arquivo_original_id, processo_id, etapa_geracao_id, nome_arquivo, formato,
-                 url_armazenamento, hash_sha256, epsg, versao)
-            VALUES (?, ?, (SELECT id FROM etapa WHERE nome = 'PUBLICACAO'), ?, 'GEOJSON', ?, ?, '4326', ?)
-            RETURNING id
-            """, Long.class,
-                arquivoOriginalId, processoId, nomeArquivo, caminho.toString(), hash, proximaVersao);
-
-        Long publicacaoId = jdbcTemplate.queryForObject("""
-            INSERT INTO publicacao
-                (processo_id, arquivo_processado_id, usuario_responsavel_id, status, destino, mensagem)
-            VALUES (?, ?, ?, ?, 'REVISAO_GESTOR', 'Pacote consolidado após aprovação do Tratamento.')
-            RETURNING id
-            """, Long.class,
-                processoId, pacoteId, gestorId, STATUS_AGUARDANDO_REVISAO);
-
-        // arquivo é gravado depois dos INSERTs: se a gravação falhar, a transação desfaz os registros
+        String hash;
+        Long pacoteId;
+        Long publicacaoId;
         try {
             Files.createDirectories(PASTA_PROCESSADA);
-            Files.write(caminho, conteudo);
-        } catch (IOException e) {
+            hash = gravarPacoteEmStreaming(copiaId, metadados, linhagem, caminhoTemp);
+
+            // o pacote vira uma cópia nova gerada na etapa PUBLICACAO. Ela não tem feicao_carga,
+            // então a vw_copia_vigente continua apontando pra cópia tratada (de propósito)
+            pacoteId = jdbcTemplate.queryForObject("""
+                INSERT INTO arquivo_processado
+                    (arquivo_original_id, processo_id, etapa_geracao_id, nome_arquivo, formato,
+                     url_armazenamento, hash_sha256, epsg, versao)
+                VALUES (?, ?, (SELECT id FROM etapa WHERE nome = 'PUBLICACAO'), ?, 'GEOJSON', ?, ?, '4326', ?)
+                RETURNING id
+                """, Long.class,
+                    arquivoOriginalId, processoId, nomeArquivo, caminho.toString(), hash, proximaVersao);
+
+            publicacaoId = jdbcTemplate.queryForObject("""
+                INSERT INTO publicacao
+                    (processo_id, arquivo_processado_id, usuario_responsavel_id, status, destino, mensagem)
+                VALUES (?, ?, ?, ?, 'REVISAO_GESTOR', 'Pacote consolidado após aprovação do Tratamento.')
+                RETURNING id
+                """, Long.class,
+                    processoId, pacoteId, gestorId, STATUS_AGUARDANDO_REVISAO);
+
+            Files.move(caminhoTemp, caminho, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            apagarSeExistir(caminhoTemp);
+            apagarSeExistir(caminho);
+            if (e instanceof RuntimeException runtime) {
+                throw runtime;
+            }
             throw new IllegalStateException("Não deu pra gravar o pacote em " + caminho, e);
         }
 
@@ -207,49 +208,92 @@ public class ConsolidacaoPublicacaoService {
         return resposta;
     }
 
-    private Map<String, Object> montarFeatureCollection(Long copiaId) {
+    private String gravarPacoteEmStreaming(
+            Long copiaId,
+            Map<String, Object> metadados,
+            LinhagemResponseDTO linhagem,
+            Path caminhoTemp) throws IOException {
+
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+
         // ST_Transform pra 4326 porque a RFC 7946 pede WGS84 (o banco guarda em SIRGAS 2000 / 4674,
         // na prática a diferença é desprezível, mas o arquivo sai no padrão).
         // Área em geography pra sair em m² de verdade, igual ao CalculoAnaliticoService da US06.
-        String geoJson = jdbcTemplate.queryForObject("""
+        String sqlFeatures = """
             SELECT json_build_object(
-                'type', 'FeatureCollection',
-                'features', COALESCE(json_agg(
-                    json_build_object(
-                        'type', 'Feature',
-                        'id', fc.id,
-                        'geometry', ST_AsGeoJSON(ST_Transform(fc.geom, 4326), 6)::json,
-                        'properties', json_build_object(
-                            'feicaoId', fc.id,
-                            'codigoImovel', fc.codigo_imovel,
-                            'areaHectares', ROUND((ST_Area(fc.geom::geography) / 10000)::numeric, 4),
-                            'hectaresSobrepostosTotal', COALESCE(rc.total, 0),
-                            'sobreposicoes', COALESCE(rc.itens, '[]'::json),
-                            'atributos', fc.atributos
-                        )
-                    ) ORDER BY fc.id
-                ), '[]'::json)
-            )
+                'type', 'Feature',
+                'id', fc.id,
+                'geometry', ST_AsGeoJSON(ST_Transform(fc.geom, 4326), 6)::json,
+                'properties', json_build_object(
+                    'feicaoId', fc.id,
+                    'codigoImovel', fc.codigo_imovel,
+                    'areaHectares', ROUND((ST_Area(fc.geom::geography) / 10000)::numeric, 4),
+                    'hectaresSobrepostosTotal', COALESCE(rc.total, 0),
+                    'sobreposicoes', COALESCE(rc.itens, '[]'::json),
+                    'atributos', fc.atributos
+                )
+            )::text AS feature_json
             FROM feicao_carga fc
-            LEFT JOIN LATERAL (
-                SELECT SUM(r.hectares_sobrepostos) AS total,
+            LEFT JOIN (
+                SELECT r.codigo_imovel,
+                       SUM(r.hectares_sobrepostos) AS total,
                        json_agg(json_build_object(
                            'fonteCamada', r.fonte_camada,
                            'codigoAlerta', r.codigo_alerta_app,
                            'hectaresSobrepostos', r.hectares_sobrepostos
                        )) AS itens
                 FROM resultados_calculos r
-                WHERE r.arquivo_processado_id = fc.arquivo_processado_id
-                  AND r.codigo_imovel = fc.codigo_imovel
-            ) rc ON TRUE
+                WHERE r.arquivo_processado_id = ?
+                GROUP BY r.codigo_imovel
+            ) rc ON rc.codigo_imovel = fc.codigo_imovel
             WHERE fc.arquivo_processado_id = ?
-            """, String.class, copiaId);
+            ORDER BY fc.id
+            """;
 
-        try {
-            return objectMapper.readValue(geoJson, new TypeReference<LinkedHashMap<String, Object>>() {});
-        } catch (IOException e) {
-            throw new IllegalStateException("O banco devolveu um GeoJSON inválido.", e);
+        try (BufferedOutputStream bos = new BufferedOutputStream(Files.newOutputStream(caminhoTemp), 65536);
+             DigestOutputStream dos = new DigestOutputStream(bos, digest);
+             JsonGenerator jg = objectMapper.getFactory().createGenerator(dos, JsonEncoding.UTF8)) {
+
+            jg.setCodec(objectMapper);
+            jg.writeStartObject();
+            jg.writeStringField("type", "FeatureCollection");
+            jg.writeArrayFieldStart("features");
+
+            jdbcTemplate.query(
+                    con -> {
+                        PreparedStatement ps = con.prepareStatement(sqlFeatures);
+                        ps.setLong(1, copiaId);
+                        ps.setLong(2, copiaId);
+                        ps.setFetchSize(1000);
+                        return ps;
+                    },
+                    rs -> {
+                        String featureJson = rs.getString(1);
+                        if (featureJson != null) {
+                            try {
+                                jg.writeRawValue(featureJson);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        }
+                    });
+
+            jg.writeEndArray();
+            // "metadados" e "linhagem" entram como foreign members, que a RFC 7946 permite
+            // (o leitor de GeoJSON que não conhece ignora e o mapa continua funcionando)
+            jg.writeObjectField("metadados", metadados);
+            jg.writeObjectField("linhagem", linhagem);
+            jg.writeEndObject();
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
         }
+
+        return HexFormat.of().formatHex(digest.digest());
     }
 
     private Map<String, Object> calcularTotais(Long copiaId) {
@@ -270,11 +314,10 @@ public class ConsolidacaoPublicacaoService {
         return totais;
     }
 
-    private static String sha256(byte[] conteudo) {
+    private static void apagarSeExistir(Path caminho) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(conteudo));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
+            Files.deleteIfExists(caminho);
+        } catch (IOException ignored) {
         }
     }
 }
