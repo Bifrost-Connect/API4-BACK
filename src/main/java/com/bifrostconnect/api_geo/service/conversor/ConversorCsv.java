@@ -14,11 +14,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
@@ -77,11 +78,12 @@ public class ConversorCsv implements ConversorArquivoGeoespacial {
             return true;
         }
         if ("zip".equalsIgnoreCase(extensao) && arquivo != null && Files.isRegularFile(arquivo)) {
-            try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(Files.newInputStream(arquivo)))) {
-                ZipEntry entrada;
+            try (ZipFile zip = new ZipFile(arquivo.toFile())) {
+                Enumeration<? extends ZipEntry> entries = zip.entries();
                 boolean temCsv = false;
                 boolean temShpOuGeoJson = false;
-                while ((entrada = zip.getNextEntry()) != null) {
+                while (entries.hasMoreElements()) {
+                    ZipEntry entrada = entries.nextElement();
                     String nome = entrada.getName().toLowerCase(Locale.ROOT);
                     if (!entrada.isDirectory()) {
                         if (nome.endsWith(".csv")) {
@@ -90,7 +92,6 @@ public class ConversorCsv implements ConversorArquivoGeoespacial {
                             temShpOuGeoJson = true;
                         }
                     }
-                    zip.closeEntry();
                 }
                 return temCsv && !temShpOuGeoJson;
             } catch (Exception ignored) {
@@ -114,8 +115,16 @@ public class ConversorCsv implements ConversorArquivoGeoespacial {
 
             Charset charset = detectarCharset(csvAlvo);
             Path geoJsonSaida = Files.createTempFile("csv-para-geojson-", ".geojson");
-            converterCsvEmStreaming(csvAlvo, charset, geoJsonSaida);
-            return geoJsonSaida;
+            try {
+                converterCsvEmStreaming(csvAlvo, charset, geoJsonSaida);
+                return geoJsonSaida;
+            } catch (Throwable t) {
+                try {
+                    Files.deleteIfExists(geoJsonSaida);
+                } catch (Throwable ignored) {
+                }
+                throw t;
+            }
         } finally {
             if (csvTemp != null) {
                 Files.deleteIfExists(csvTemp);
@@ -124,30 +133,48 @@ public class ConversorCsv implements ConversorArquivoGeoespacial {
     }
 
     private Path extrairCsvDoZip(Path arquivoZip) throws IOException {
-        try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(Files.newInputStream(arquivoZip), IO_BUFFER_SIZE))) {
-            ZipEntry entrada;
-            while ((entrada = zip.getNextEntry()) != null) {
+        Path extraido = null;
+        try (ZipFile zip = new ZipFile(arquivoZip.toFile())) {
+            ZipEntry csvEntry = null;
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entrada = entries.nextElement();
                 if (!entrada.isDirectory() && entrada.getName().toLowerCase(Locale.ROOT).endsWith(".csv")) {
-                    Path extraido = Files.createTempFile("csv-zip-extraido-", ".csv");
-                    try (var out = new BufferedOutputStream(Files.newOutputStream(extraido), IO_BUFFER_SIZE)) {
-                        byte[] buf = new byte[IO_BUFFER_SIZE];
-                        long total = 0;
-                        int lidos;
-                        while ((lidos = zip.read(buf)) != -1) {
-                            total += lidos;
-                            if (total > LIMITE_DESCOMPACTACAO) {
-                                Files.deleteIfExists(extraido);
-                                throw new IllegalArgumentException("O CSV extraído do ZIP excede o limite de 5 GB.");
-                            }
-                            out.write(buf, 0, lidos);
-                        }
-                    }
-                    return extraido;
+                    csvEntry = entrada;
+                    break;
                 }
-                zip.closeEntry();
+            }
+
+            if (csvEntry == null) {
+                throw new IllegalArgumentException("Nenhum arquivo .csv encontrado dentro do ZIP.");
+            }
+            if (csvEntry.getSize() > LIMITE_DESCOMPACTACAO) {
+                throw new IllegalArgumentException("O CSV extraído do ZIP excede o limite de 5 GB.");
+            }
+
+            extraido = Files.createTempFile("csv-zip-extraido-", ".csv");
+            try (InputStream in = new BufferedInputStream(zip.getInputStream(csvEntry), IO_BUFFER_SIZE);
+                 var out = new BufferedOutputStream(Files.newOutputStream(extraido), IO_BUFFER_SIZE)) {
+                byte[] buf = new byte[IO_BUFFER_SIZE];
+                long total = 0;
+                int lidos;
+                while ((lidos = in.read(buf)) != -1) {
+                    total += lidos;
+                    if (total > LIMITE_DESCOMPACTACAO) {
+                        throw new IllegalArgumentException("O CSV extraído do ZIP excede o limite de 5 GB.");
+                    }
+                    out.write(buf, 0, lidos);
+                }
+            }
+
+            Path resultado = extraido;
+            extraido = null;
+            return resultado;
+        } finally {
+            if (extraido != null) {
+                Files.deleteIfExists(extraido);
             }
         }
-        throw new IllegalArgumentException("Nenhum arquivo .csv encontrado dentro do ZIP.");
     }
 
     private Charset detectarCharset(Path csvFile) throws IOException {

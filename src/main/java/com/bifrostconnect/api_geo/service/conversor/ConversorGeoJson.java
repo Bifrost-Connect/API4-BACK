@@ -1,12 +1,16 @@
 package com.bifrostconnect.api_geo.service.conversor;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Enumeration;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -16,6 +20,7 @@ import org.springframework.stereotype.Component;
 public class ConversorGeoJson implements ConversorArquivoGeoespacial {
 
     private static final long TAMANHO_MAXIMO = 5L * 1024 * 1024 * 1024; // 5 GB
+    private static final int IO_BUFFER_SIZE = 64 * 1024;
 
     @Override
     public boolean suporta(String extensao, Path arquivo) {
@@ -24,12 +29,13 @@ public class ConversorGeoJson implements ConversorArquivoGeoespacial {
         }
 
         if ("zip".equalsIgnoreCase(extensao) && arquivo != null && Files.isRegularFile(arquivo)) {
-            try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(arquivo))) {
-                ZipEntry entrada;
+            try (ZipFile zip = new ZipFile(arquivo.toFile())) {
+                Enumeration<? extends ZipEntry> entries = zip.entries();
                 boolean temGeoJson = false;
                 boolean temShp = false;
 
-                while ((entrada = zip.getNextEntry()) != null) {
+                while (entries.hasMoreElements()) {
+                    ZipEntry entrada = entries.nextElement();
                     String nome = entrada.getName().toLowerCase(Locale.ROOT);
                     if (!entrada.isDirectory()) {
                         if (nome.endsWith(".geojson") || nome.endsWith(".json")) {
@@ -39,7 +45,6 @@ public class ConversorGeoJson implements ConversorArquivoGeoespacial {
                             temShp = true;
                         }
                     }
-                    zip.closeEntry();
                 }
                 return temGeoJson && !temShp;
             } catch (Exception ignored) {
@@ -64,49 +69,50 @@ public class ConversorGeoJson implements ConversorArquivoGeoespacial {
 
         Path extraido = null;
 
-        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(arquivoOrigem))) {
-            ZipEntry entrada;
-            int quantidadeGeoJson = 0;
+        try (ZipFile zip = new ZipFile(arquivoOrigem.toFile())) {
+            ZipEntry geoJsonEntry = null;
+            Enumeration<? extends ZipEntry> entries = zip.entries();
 
-            while ((entrada = zip.getNextEntry()) != null) {
+            while (entries.hasMoreElements()) {
+                ZipEntry entrada = entries.nextElement();
                 String nomeEntrada = entrada.getName().toLowerCase(Locale.ROOT);
 
                 if (entrada.isDirectory() || (!nomeEntrada.endsWith(".geojson") && !nomeEntrada.endsWith(".json"))) {
-                    zip.closeEntry();
                     continue;
                 }
 
-                quantidadeGeoJson++;
-
-                if (quantidadeGeoJson > 1) {
+                if (geoJsonEntry != null) {
                     throw new IllegalArgumentException(
                             "O ZIP contém mais de um arquivo GeoJSON. Envie um ZIP com apenas um GeoJSON.");
                 }
-
-                extraido = Files.createTempFile("geojson-extraido-", ".geojson");
-
-                try (OutputStream saida = Files.newOutputStream(extraido)) {
-                    byte[] buffer = new byte[8192];
-                    long total = 0;
-                    int bytesLidos;
-
-                    while ((bytesLidos = zip.read(buffer)) != -1) {
-                        total += bytesLidos;
-
-                        if (total > TAMANHO_MAXIMO) {
-                            throw new IllegalArgumentException(
-                                    "O GeoJSON extraído excede o limite de 5 GB.");
-                        }
-
-                        saida.write(buffer, 0, bytesLidos);
-                    }
-                }
-
-                zip.closeEntry();
+                geoJsonEntry = entrada;
             }
 
-            if (quantidadeGeoJson == 0) {
+            if (geoJsonEntry == null) {
                 throw new IllegalArgumentException("O ZIP não contém nenhum arquivo .geojson ou .json.");
+            }
+
+            if (geoJsonEntry.getSize() > TAMANHO_MAXIMO) {
+                throw new IllegalArgumentException("O GeoJSON extraído excede o limite de 5 GB.");
+            }
+
+            extraido = Files.createTempFile("geojson-extraido-", ".geojson");
+
+            try (InputStream entrada = new BufferedInputStream(zip.getInputStream(geoJsonEntry), IO_BUFFER_SIZE);
+                 OutputStream saida = new BufferedOutputStream(Files.newOutputStream(extraido), IO_BUFFER_SIZE)) {
+                byte[] buffer = new byte[IO_BUFFER_SIZE];
+                long total = 0;
+                int bytesLidos;
+
+                while ((bytesLidos = entrada.read(buffer)) != -1) {
+                    total += bytesLidos;
+
+                    if (total > TAMANHO_MAXIMO) {
+                        throw new IllegalArgumentException("O GeoJSON extraído excede o limite de 5 GB.");
+                    }
+
+                    saida.write(buffer, 0, bytesLidos);
+                }
             }
 
             Path resultado = extraido;

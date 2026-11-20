@@ -35,7 +35,7 @@ public class PadronizacaoEpsgService {
 
 
     private static final int LOTE_MAX_FEICOES = 500;
-    private static final long LOTE_MAX_CARACTERES = 5_000_000L;
+    private static final long LOTE_MAX_CARACTERES = 1_000_000L;
 
     private static final String SQL_TRANSFORMAR = """
             SELECT ST_AsGeoJSON(
@@ -97,7 +97,7 @@ public class PadronizacaoEpsgService {
     public String calcularSha256(Path arquivo) throws IOException {
         try (InputStream in = Files.newInputStream(arquivo)) {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[8192];
+            byte[] buffer = new byte[65536];
             int lidos;
             while ((lidos = in.read(buffer)) != -1) {
                 digest.update(buffer, 0, lidos);

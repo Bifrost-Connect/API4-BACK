@@ -1,17 +1,19 @@
 package com.bifrostconnect.api_geo.service.conversor;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
@@ -42,13 +44,13 @@ public class ConversorKml implements ConversorArquivoGeoespacial {
         }
 
         if ("zip".equalsIgnoreCase(extensao) && arquivo != null && Files.isRegularFile(arquivo)) {
-            try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(arquivo))) {
-                ZipEntry entrada;
-                while ((entrada = zip.getNextEntry()) != null) {
-                    if (entrada.getName().toLowerCase(Locale.ROOT).endsWith(".kml")) {
+            try (ZipFile zip = new ZipFile(arquivo.toFile())) {
+                Enumeration<? extends ZipEntry> entries = zip.entries();
+                while (entries.hasMoreElements()) {
+                    ZipEntry entrada = entries.nextElement();
+                    if (!entrada.isDirectory() && entrada.getName().toLowerCase(Locale.ROOT).endsWith(".kml")) {
                         return true;
                     }
-                    zip.closeEntry();
                 }
             } catch (Exception ignored) {
             }
@@ -80,8 +82,16 @@ public class ConversorKml implements ConversorArquivoGeoespacial {
             }
 
             Path tempGeoJson = Files.createTempFile("kml-para-geojson-", ".geojson");
-            escreverGeoJson(tempGeoJson, features);
-            return tempGeoJson;
+            try {
+                escreverGeoJson(tempGeoJson, features);
+                return tempGeoJson;
+            } catch (Throwable t) {
+                try {
+                    Files.deleteIfExists(tempGeoJson);
+                } catch (Throwable ignored) {
+                }
+                throw t;
+            }
 
         } catch (IllegalArgumentException e) {
             throw e;
@@ -91,15 +101,15 @@ public class ConversorKml implements ConversorArquivoGeoespacial {
     }
 
     private byte[] extrairKmlDeKmz(Path arquivoKmz) throws IOException {
-        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(arquivoKmz))) {
-            ZipEntry entrada;
-            while ((entrada = zip.getNextEntry()) != null) {
+        try (ZipFile zip = new ZipFile(arquivoKmz.toFile())) {
+            Enumeration<? extends ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entrada = entries.nextElement();
                 if (!entrada.isDirectory() && entrada.getName().toLowerCase(Locale.ROOT).endsWith(".kml")) {
-                    byte[] data = zip.readAllBytes();
-                    zip.closeEntry();
-                    return data;
+                    try (InputStream in = new BufferedInputStream(zip.getInputStream(entrada), 65536)) {
+                        return in.readAllBytes();
+                    }
                 }
-                zip.closeEntry();
             }
         }
         throw new IllegalArgumentException("O arquivo compactado não contém nenhum arquivo .kml interno.");

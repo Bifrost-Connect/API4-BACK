@@ -59,6 +59,10 @@ public class GeoJsonEpsgService {
                 } else {
                     parser.skipChildren();
                 }
+
+                if (tipo != null && crsDeclarado) {
+                    break;
+                }
             }
         } catch (IOException e) {
             throw new IllegalArgumentException("Não foi possível ler o GeoJSON para verificar o EPSG.", e);
