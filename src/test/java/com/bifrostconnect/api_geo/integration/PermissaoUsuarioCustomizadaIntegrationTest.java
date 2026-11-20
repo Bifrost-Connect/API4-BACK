@@ -345,14 +345,28 @@ class PermissaoUsuarioCustomizadaIntegrationTest {
             "auditor@georural.com.br,    AUDITOR",
             "analista@georural.com.br,   ANALISTA",
             "admin@georural.com.br,      ADMINISTRADOR",
-            "gestor@georural.com.br,     GESTOR",
-            "integrador@georural.com.br, INTEGRADOR_EXTERNO"
+            "gestor@georural.com.br,     GESTOR"
     })
     void usuariosDemoCanonicosFazemLoginComSucesso(String emailDemo, String perfilEsperado) throws Exception {
         JsonNode resposta = login(emailDemo, "Troca123");
         assertFalse(tokenDo(resposta).isBlank());
         assertEquals(perfilEsperado, resposta.get("usuario").get("perfil").asText());
         assertFalse(extrairSet(resposta.get("usuario").get("permissoes")).isEmpty());
+    }
+
+    @Test
+    @DisplayName("Banco possui exatamente os 5 perfis oficiais e não mantém INTEGRADOR_EXTERNO nem demo integrador ativo")
+    void bancoPossuiApenasCincoPerfisOficiaisSemIntegradorExterno() {
+        Integer totalPerfis = jdbc.queryForObject("SELECT count(*) FROM perfil", Integer.class);
+        Integer perfisIntegrador = jdbc.queryForObject(
+                "SELECT count(*) FROM perfil WHERE nome = 'INTEGRADOR_EXTERNO'", Integer.class);
+        Integer integradorAtivo = jdbc.queryForObject(
+                "SELECT count(*) FROM usuario WHERE email = 'integrador@georural.com.br' AND ativo = TRUE",
+                Integer.class);
+
+        assertEquals(5, totalPerfis);
+        assertEquals(0, perfisIntegrador);
+        assertEquals(0, integradorAtivo);
     }
 
     @Test

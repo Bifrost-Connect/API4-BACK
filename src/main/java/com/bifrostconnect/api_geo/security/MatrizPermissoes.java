@@ -40,9 +40,6 @@ public final class MatrizPermissoes {
                 EXPORTACAO_HISTORICO_CONSULTAR, CHAVE_API_GERENCIAR)));
 
         MATRIZ.put("ANALISTA", uniao(CONSUMO, EnumSet.of(ANALISE_EXECUTAR, COMPARAR_SAFRAS, RELATORIO_EXPORTAR)));
-
-        MATRIZ.put("INTEGRADOR_EXTERNO", EnumSet.of(
-                CATALOGO_CONSULTAR, MAPA_CONSULTAR, RELATORIO_EXPORTAR, CHAVE_API_GERENCIAR));
     }
 
     // o que a exceção SoD (usuario.excecao_sod_autorizada) libera pro Operador.

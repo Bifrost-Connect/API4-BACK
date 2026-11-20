@@ -320,32 +320,52 @@ class ExternoApiKeyIntegrationTest {
     }
 
     @Test
-    @DisplayName("US12 - GESTOR e INTEGRADOR_EXTERNO acessam /admin/chaves-api; ANALISTA, OPERADOR e AUDITOR recebem 403")
+    @DisplayName("US12 - ADMINISTRADOR e GESTOR acessam /admin/chaves-api; ANALISTA, OPERADOR e AUDITOR recebem 403")
     void deveRespeitarPermissoesPorPerfilNasRotasDeChavesApi() throws Exception {
+        String tokenAdmin = loginComPerfil("ADMINISTRADOR");
         String tokenGestor = loginComPerfil("GESTOR");
-        String tokenIntegrador = loginComPerfil("INTEGRADOR_EXTERNO");
         String tokenAnalista = loginComPerfil("ANALISTA");
         String tokenOperador = loginComPerfil("OPERADOR");
         String tokenAuditor = loginComPerfil("AUDITOR");
 
-        mockMvc.perform(comToken(get("/admin/chaves-api"), tokenGestor))
+        mockMvc.perform(comToken(get("/admin/chaves-api"), tokenAdmin))
                 .andExpect(status().isOk());
 
-        MvcResult criadaPorIntegrador = mockMvc.perform(comToken(post("/admin/chaves-api"), tokenIntegrador)
+        MvcResult criadaPorAdmin = mockMvc.perform(comToken(post("/admin/chaves-api"), tokenAdmin)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "nome_parceiro": "Parceiro Integrador",
+                                  "nome_parceiro": "Parceiro Admin",
                                   "escopos": ["CATALOGO_CONSULTAR"]
                                 }
                                 """))
                 .andExpect(status().isCreated())
                 .andReturn();
 
-        Long chaveId = objectMapper.readTree(criadaPorIntegrador.getResponse().getContentAsString())
+        Long chaveAdminId = objectMapper.readTree(criadaPorAdmin.getResponse().getContentAsString())
                 .get("id").asLong();
 
-        mockMvc.perform(comToken(get("/admin/chaves-api/{id}/logs", chaveId), tokenIntegrador))
+        mockMvc.perform(comToken(get("/admin/chaves-api/{id}/logs", chaveAdminId), tokenAdmin))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(comToken(get("/admin/chaves-api"), tokenGestor))
+                .andExpect(status().isOk());
+
+        MvcResult criadaPorGestor = mockMvc.perform(comToken(post("/admin/chaves-api"), tokenGestor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nome_parceiro": "Parceiro Gestor",
+                                  "escopos": ["CATALOGO_CONSULTAR"]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long chaveGestorId = objectMapper.readTree(criadaPorGestor.getResponse().getContentAsString())
+                .get("id").asLong();
+
+        mockMvc.perform(comToken(get("/admin/chaves-api/{id}/logs", chaveGestorId), tokenGestor))
                 .andExpect(status().isOk());
 
         for (String tokenNegado : List.of(tokenAnalista, tokenOperador, tokenAuditor)) {
@@ -354,9 +374,9 @@ class ExternoApiKeyIntegrationTest {
             mockMvc.perform(comToken(post("/admin/chaves-api"), tokenNegado)
                             .contentType(MediaType.APPLICATION_JSON).content("{}"))
                     .andExpect(status().isForbidden());
-            mockMvc.perform(comToken(patch("/admin/chaves-api/{id}/revogar", chaveId), tokenNegado))
+            mockMvc.perform(comToken(patch("/admin/chaves-api/{id}/revogar", chaveGestorId), tokenNegado))
                     .andExpect(status().isForbidden());
-            mockMvc.perform(comToken(get("/admin/chaves-api/{id}/logs", chaveId), tokenNegado))
+            mockMvc.perform(comToken(get("/admin/chaves-api/{id}/logs", chaveGestorId), tokenNegado))
                     .andExpect(status().isForbidden());
         }
     }
