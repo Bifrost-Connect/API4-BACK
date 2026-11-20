@@ -9,6 +9,7 @@ target/
 .env.*
 *.env
 executavel/.env
+executavel/*.jar
 !.env.example
 !executavel/.env.example
 

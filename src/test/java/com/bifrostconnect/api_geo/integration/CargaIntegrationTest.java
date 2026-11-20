@@ -107,6 +107,26 @@ public class CargaIntegrationTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    @WithMockUser(username = "operador", roles = "OPERADOR")
+    public void deveRetornarBadRequestQuandoAnoSafraNaoForNumerico() throws Exception {
+        String jsonRequest = """
+            {
+                "orgaoId": 1,
+                "conjuntoId": 1,
+                "operadorId": 1,
+                "anoSafra": "2025/2026",
+                "epsgOrigem": "4326"
+            }
+        """;
+
+        mockMvc.perform(post("/carga/metadados")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonRequest))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.erro").value("O ano da safra deve ser um valor numérico"));
+    }
+
     /*@Test
     @DisplayName("Tarefa 2: Deve alterar situacao_atual_id no banco para Quarentena após processar arquivo inválido")
     public void deveAtualizarBancoParaQuarentena() throws Exception {

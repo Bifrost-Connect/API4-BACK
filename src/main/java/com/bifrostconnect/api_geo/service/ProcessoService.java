@@ -135,12 +135,18 @@ public class ProcessoService {
         } catch (FalhaGeoespacialException e) {
             // A carga já foi devidamente encaminhada para a Quarentena pelo processarArquivo
             return CompletableFuture.completedFuture(null);
-        } catch (Exception e) {
+        } catch (Throwable t) {
+            String msg = t.getMessage();
+            String resumo = t.getClass().getSimpleName()
+                    + (msg != null && !msg.isBlank() ? ": " + msg : "");
+            if (resumo.length() > 300) {
+                resumo = resumo.substring(0, 300);
+            }
             try {
                 Processo p = buscarPorId(processoId);
-                processoEstadoService.atualizarEstado(p, "VALIDACAO", "FALHOU", "Erro no processamento em segundo plano: " + e.getMessage());
-                auditoriaLogService.registrarLog(p, "ERROR", "Falha no processamento em segundo plano: " + e.getMessage());
-            } catch (Exception ignored) {}
+                processoEstadoService.atualizarEstado(p, "VALIDACAO", "FALHOU", "Erro no processamento em segundo plano: " + resumo);
+                auditoriaLogService.registrarLog(p, "ERROR", "Falha no processamento em segundo plano: " + resumo);
+            } catch (Throwable ignored) {}
             return CompletableFuture.completedFuture(null);
         }
     }
@@ -543,19 +549,11 @@ public class ProcessoService {
                 "Indicador fechado oficialmente pelo gestor."
         );
 
-        jdbcTemplate.update("""
-            UPDATE processo
-            SET versao_fechada = TRUE,
-                versao_oficial = '1.0',
-                data_publicacao = now(),
-                gestor_publicacao_id = ?
-            WHERE id = ?
-            """, gestorId, processo.getId());
-
         processo.setVersaoFechada(true);
         processo.setVersaoOficial("1.0");
         processo.setDataPublicacao(LocalDateTime.now());
         processo.setGestorPublicacaoId(gestorId);
+        processoRepository.saveAndFlush(processo);
 
         auditoriaLogService.registrarAuditoria(
                 gestorId,

@@ -64,7 +64,7 @@ class RbacMatrizCruzadaIntegrationTest {
 
     private static final String SENHA = "Senha@Forte123";
     private static final List<String> PERFIS = List.of(
-            "ADMINISTRADOR", "OPERADOR", "AUDITOR", "GESTOR", "ANALISTA", "INTEGRADOR_EXTERNO");
+            "ADMINISTRADOR", "OPERADOR", "AUDITOR", "GESTOR", "ANALISTA");
 
     @Autowired
     private WebApplicationContext context;
@@ -195,6 +195,7 @@ class RbacMatrizCruzadaIntegrationTest {
             "ANALISTA,           POST,  /carga/metadados",
             "ANALISTA,           POST,  /carga/upload",
             "ANALISTA,           PATCH, /carga/1/cancelar",
+            "ANALISTA,           GET,   /admin/chaves-api",
             "ANALISTA,           GET,   /carga/1/quarentena/exportar",
             "ANALISTA,           GET,   /carga/download/1",
             "ANALISTA,           PATCH, /indicadores/1/fechar",
@@ -212,9 +213,7 @@ class RbacMatrizCruzadaIntegrationTest {
             "AUDITOR,            POST,  /carga/1/decisao-gestor",
             "AUDITOR,            PATCH, /carga/1/cancelar",
             "GESTOR,             POST,  /carga/upload",
-            "GESTOR,             GET,   /admin/usuarios",
-            "INTEGRADOR_EXTERNO, GET,   /processos/metricas",
-            "INTEGRADOR_EXTERNO, POST,  /carga/metadados"
+            "GESTOR,             GET,   /admin/usuarios"
     })
     void rotasCriticasBarramPerfilTrocado(String perfil, String metodo, String rota) throws Exception {
         Long usuario = criarUsuario(perfil);

@@ -1,6 +1,7 @@
 package com.bifrostconnect.api_geo.security;
 
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -45,10 +46,19 @@ public class RbacService {
             if (!usuario.ativo()) {
                 return false;
             }
-            if (MatrizPermissoes.perfilTem(usuario.perfil(), permissao)) {
+            Set<Permissao> efetivas = usuarioSessaoService.permissoesEfetivas(usuario);
+            if (efetivas.contains(permissao)) {
+                if (!MatrizPermissoes.perfilTem(usuario.perfil(), permissao)
+                        && MatrizPermissoes.PERFIL_COM_EXCECAO_SOD.equalsIgnoreCase(usuario.perfil())
+                        && MatrizPermissoes.LIBERADAS_POR_EXCECAO_SOD.contains(permissao)) {
+                    registrarAlertaSod(usuario, permissao);
+                }
                 return true;
             }
-            return liberarPorExcecaoSod(usuario, permissao);
+            if (usuario.permissoesCustomizadas() == null) {
+                return liberarPorExcecaoSod(usuario, permissao);
+            }
+            return false;
         }
 
         return auth.getAuthorities().stream()
@@ -67,6 +77,11 @@ public class RbacService {
             return false;
         }
 
+        registrarAlertaSod(usuario, permissao);
+        return true;
+    }
+
+    private void registrarAlertaSod(EstadoUsuario usuario, Permissao permissao) {
         HttpServletRequest request = requisicaoAtual();
         String rota = request == null ? "?" : request.getMethod() + " " + request.getRequestURI();
 
@@ -78,7 +93,6 @@ public class RbacService {
                 "Operador usou exceção de Segregação de Funções para " + permissao.name(),
                 "rota=" + rota + "; usuario=" + usuario.email(),
                 request == null ? null : request.getRemoteAddr());
-        return true;
     }
 
     private HttpServletRequest requisicaoAtual() {

@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Service
 public class FeicaoCargaService {
 
+    static final int LIMITE_REJEITADAS_MEMORIA = 500;
     private static final int LOTE_MAX_FEICOES = 500;
 
     // o codigo_imovel lá no banco é VARCHAR(100), então corta se passar disso
@@ -79,12 +80,16 @@ public class FeicaoCargaService {
                     String motivo = verificarGeometria(feicao.get("geometry"));
 
                     if (motivo != null) {
-                        rejeitadas.add(Problema.daFeicao(TipoProblema.GEOMETRIA_INVALIDA, codigo, motivo));
+                        if (rejeitadas.size() < LIMITE_REJEITADAS_MEMORIA) {
+                            rejeitadas.add(Problema.daFeicao(TipoProblema.GEOMETRIA_INVALIDA, codigo, motivo));
+                        }
                         continue;
                     }
                     if (!codigosVistos.add(codigo)) {
-                        rejeitadas.add(Problema.daFeicao(TipoProblema.CODIGO_IMOVEL_DUPLICADO, codigo,
-                                "Código de imóvel " + codigo + " repetido no arquivo; só a primeira ocorrência foi carregada."));
+                        if (rejeitadas.size() < LIMITE_REJEITADAS_MEMORIA) {
+                            rejeitadas.add(Problema.daFeicao(TipoProblema.CODIGO_IMOVEL_DUPLICADO, codigo,
+                                    "Código de imóvel " + codigo + " repetido no arquivo; só a primeira ocorrência foi carregada."));
+                        }
                         continue;
                     }
 

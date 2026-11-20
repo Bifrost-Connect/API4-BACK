@@ -77,7 +77,9 @@ public class MapaController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size,
             @RequestParam(required = false) String busca,
-            @RequestParam(required = false) Long processoId) {
+            @RequestParam(required = false) Long processoId,
+            @RequestParam(required = false) Long baseId,
+            @RequestParam(required = false) Long camadaId) {
 
         if (page < 0) {
             throw new ResponseStatusException(
@@ -91,6 +93,8 @@ public class MapaController {
                     "O parâmetro 'size' deve estar entre 1 e 500.");
         }
 
+        Long filtroProcessoId = processoId != null ? processoId : (baseId != null ? baseId : camadaId);
+
         Map<String, Object> geoJson =
                 camadasMapaService.buscarCamadasPorFiltros(
                         conjuntoId,
@@ -99,7 +103,7 @@ public class MapaController {
                         page,
                         size,
                         busca,
-                        processoId);
+                        filtroProcessoId);
 
         return ResponseEntity.ok(geoJson);
     }
