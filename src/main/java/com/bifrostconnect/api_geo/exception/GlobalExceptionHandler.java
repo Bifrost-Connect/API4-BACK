@@ -61,7 +61,7 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(error); // <-- Faltava o body e o fechamento do método
+                .body(error);
     }
 
     // US09 - Tarefa 8: ID inexistente sai sempre no mesmo formato { "erro": ... } com 404
@@ -113,6 +113,8 @@ public class GlobalExceptionHandler {
                 .status(ex.getStatus())
                 .body(RespostaErroPadrao.corpo(
                         ex.getStatus(), ex.getCodigo(), ex.getMessage(), request.getRequestURI()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleIllegalArgument(
             IllegalArgumentException ex) {

@@ -31,7 +31,6 @@ public class ApiKeyAuthService {
     public static final int LIMITE_REQUISICOES_POR_MINUTO = 60;
     private static final long JANELA_RATE_LIMIT_MS = 60_000L;
     private static final int TAMANHO_PREFIXO_LOG = 12; // o mesmo que fica em chaves_api.prefixo_chave
-    private static final int LIMITE_REQUISICOES_POR_MINUTO = 60;
     private static final long TTL_CACHE_MS = 60_000L; // 1 min (invalidado antes se revogar)
 
     public record ContextoApiKey(
