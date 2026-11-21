@@ -92,6 +92,10 @@ class ConectorIngestaoControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/conectores/testar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -130,6 +134,10 @@ class ConectorIngestaoControllerTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/conectores/1/testar"))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(post("/conectores/testar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isForbidden());
         mockMvc.perform(post("/conectores/1/executar"))
                 .andExpect(status().isForbidden());
     }
@@ -148,6 +156,8 @@ class ConectorIngestaoControllerTest {
         when(conectorService.atualizarConector(eq(10L), any())).thenReturn(resp);
         when(conectorService.alternarAtivo(10L, false)).thenReturn(resp);
         when(conectorService.testarConexao(10L)).thenReturn(Map.of("sucesso", true, "statusHttp", 200, "tempoMs", 45L));
+        when(conectorService.testarConexaoAdHoc(any()))
+                .thenReturn(Map.of("sucesso", true, "statusHttp", 200, "mensagem", "Conexão validada com sucesso (HTTP 200).", "tempoMs", 30L));
         when(conectorService.executarConector(eq(10L), any(), eq(1L))).thenReturn(execResp);
 
         String corpoValido = """
@@ -187,6 +197,19 @@ class ConectorIngestaoControllerTest {
         mockMvc.perform(post("/conectores/10/testar"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sucesso").value(true));
+
+        mockMvc.perform(post("/conectores/testar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nome\":\"\"}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/conectores/testar")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(corpoValido))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sucesso").value(true))
+                .andExpect(jsonPath("$.statusHttp").value(200));
+        verify(conectorService).testarConexaoAdHoc(any());
 
         mockMvc.perform(post("/conectores/10/executar")
                         .contentType(MediaType.APPLICATION_JSON)

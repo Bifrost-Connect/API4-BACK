@@ -116,6 +116,13 @@ public class ConectorIngestaoController {
     }
 
     @RequirePermission(Permissao.CARGA_ENVIAR)
+    @PostMapping("/testar")
+    public ResponseEntity<Map<String, Object>> testarConexaoAdHoc(
+            @Valid @RequestBody ConectorFonteDadosRequest req) {
+        return ResponseEntity.ok(service.testarConexaoAdHoc(req));
+    }
+
+    @RequirePermission(Permissao.CARGA_ENVIAR)
     @PostMapping("/{id}/testar")
     public ResponseEntity<Map<String, Object>> testarConexao(@PathVariable Long id) {
         return ResponseEntity.ok(service.testarConexao(id));

@@ -26,12 +26,15 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.Security;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
+
+import javax.net.ssl.SSLHandshakeException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -126,11 +129,11 @@ class ConectorIngestaoServiceTest {
     }
 
     @Test
-    @DisplayName("Lista todos os 8 templates públicos esperados com seus presets")
+    @DisplayName("Lista os 7 templates públicos estáveis esperados com seus presets (sem IBAMA PAMGIA quebrado)")
     void deveListarTemplatesPublicosCompletos() {
         List<Map<String, Object>> templates = service.listarTemplatesPublicos();
 
-        assertThat(templates).hasSize(8);
+        assertThat(templates).hasSize(7);
         assertThat(templates)
                 .extracting(t -> (String) t.get("codigo"))
                 .containsExactly(
@@ -139,10 +142,10 @@ class ConectorIngestaoServiceTest {
                         "FUNAI_TI_WFS",
                         "IBGE_BIOMAS_WFS",
                         "NASA_FIRMS_API",
-                        "IBAMA_EMBARGOS_HTTP",
                         "GOOGLE_DRIVE",
                         "ARCGIS_REST"
-                );
+                )
+                .doesNotContain("IBAMA_EMBARGOS_HTTP");
 
         Map<String, Object> sicar = templates.get(0);
         assertThat(sicar.get("tipoProtocolo")).isEqualTo("OGC_WFS");
@@ -334,6 +337,190 @@ class ConectorIngestaoServiceTest {
         Map<String, Object> resErr = service.testarConexao(1L);
         assertThat(resErr.get("sucesso")).isEqualTo(false);
         assertThat(resErr.get("statusHttp")).isNull();
+    }
+
+    @Test
+    @DisplayName("habilitarCifrasTlsLegadasParaOrgaos remove TLS_RSA_* preservando demais algoritmos")
+    void deveHabilitarCifrasTlsLegadasPreservandoOutrosAlgoritmos() {
+        String original = Security.getProperty("jdk.tls.disabledAlgorithms");
+        try {
+            Security.setProperty(
+                    "jdk.tls.disabledAlgorithms",
+                    "SSLv3, TLSv1, TLSv1.1, RC4, TLS_RSA_*, DH keySize < 1024");
+
+            ConectorIngestaoService.habilitarCifrasTlsLegadasParaOrgaos();
+
+            String atualizado = Security.getProperty("jdk.tls.disabledAlgorithms");
+            assertThat(atualizado)
+                    .doesNotContain("TLS_RSA_")
+                    .contains("SSLv3")
+                    .contains("TLSv1")
+                    .contains("TLSv1.1")
+                    .contains("RC4")
+                    .contains("DH keySize < 1024");
+        } finally {
+            if (original != null) {
+                Security.setProperty("jdk.tls.disabledAlgorithms", original);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("testarConexao envia headers User-Agent de navegador e Accept */* e descreve erros HTTP e SSL")
+    @SuppressWarnings("unchecked")
+    void deveEnviarHeadersNavegadorEDescreverErrosHttpESsl() throws Exception {
+        String segredoCifrado = criptoService.cifrar("segredo-teste-123");
+        ConectorIngestaoService.ConectorInterno wfs = new ConectorIngestaoService.ConectorInterno(
+                1L, "SICAR", null, "OGC_WFS", "https://geoserver.car.gov.br/geoserver/sicar/wfs", "CARGA", null,
+                null, null, null, "SHAPE-ZIP", "4674", "cod_imovel", Map.of(),
+                "API_KEY_QUERY", "token", "segr****", segredoCifrado, "MANUAL", null, true);
+
+        doReturn(List.of(wfs)).when(jdbcTemplate).query(contains("c.credencial_cifrada"), any(RowMapper.class), eq(1L));
+
+        HttpResponse<String> resp403 = mock(HttpResponse.class);
+        when(resp403.statusCode()).thenReturn(403);
+        HttpResponse<String> resp404 = mock(HttpResponse.class);
+        when(resp404.statusCode()).thenReturn(404);
+        HttpResponse<String> resp401 = mock(HttpResponse.class);
+        when(resp401.statusCode()).thenReturn(401);
+        HttpResponse<String> resp503 = mock(HttpResponse.class);
+        when(resp503.statusCode()).thenReturn(503);
+        HttpResponse<String> resp418 = mock(HttpResponse.class);
+        when(resp418.statusCode()).thenReturn(418);
+
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(resp403)
+                .thenReturn(resp404)
+                .thenReturn(resp401)
+                .thenReturn(resp503)
+                .thenReturn(resp418)
+                .thenThrow(new IOException("Wrapper", new SSLHandshakeException("No appropriate protocol segredo-teste-123")));
+
+        Map<String, Object> r403 = service.testarConexao(1L);
+        assertThat(r403.get("sucesso")).isEqualTo(false);
+        assertThat(r403.get("statusHttp")).isEqualTo(403);
+        assertThat(r403.get("mensagem")).isEqualTo("Servidor retornou 403: acesso negado pelo WAF do órgão.");
+
+        ArgumentCaptor<HttpRequest> reqCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(reqCaptor.capture(), any());
+        assertThat(reqCaptor.getValue().headers().firstValue("User-Agent"))
+                .contains(ConectorIngestaoService.USER_AGENT_BROWSER);
+        assertThat(reqCaptor.getValue().headers().firstValue("Accept")).contains("*/*");
+
+        Map<String, Object> r404 = service.testarConexao(1L);
+        assertThat(r404.get("mensagem")).isEqualTo("Servidor retornou 404: recurso não encontrado na URL informada.");
+
+        Map<String, Object> r401 = service.testarConexao(1L);
+        assertThat(r401.get("mensagem")).isEqualTo("Servidor retornou 401: credencial ou chave de API inválida ou ausente.");
+
+        Map<String, Object> r503 = service.testarConexao(1L);
+        assertThat(r503.get("mensagem")).isEqualTo("Servidor retornou 503: instabilidade temporária no portal externo.");
+
+        Map<String, Object> r418 = service.testarConexao(1L);
+        assertThat(r418.get("mensagem")).isEqualTo("Servidor retornou HTTP 418.");
+
+        Map<String, Object> rSsl = service.testarConexao(1L);
+        assertThat(rSsl.get("sucesso")).isEqualTo(false);
+        assertThat(rSsl.get("statusHttp")).isNull();
+        assertThat(String.valueOf(rSsl.get("mensagem")))
+                .startsWith("Falha de handshake TLS/SSL com o servidor do órgão:")
+                .doesNotContain("segredo-teste-123")
+                .contains("****");
+    }
+
+    @Test
+    @DisplayName("testarConexaoAdHoc valida payload e testa conectividade sem persistir no banco")
+    @SuppressWarnings("unchecked")
+    void deveTestarConexaoAdHocSemPersistir() throws Exception {
+        ConectorFonteDadosRequest invalido = criarRequest(
+                "Invalido", "OGC_WFS", "https://example.org/wfs", "REFERENCIA", null,
+                "SHAPE-ZIP", "NONE", null, null, "MANUAL", null, true);
+
+        assertThatThrownBy(() -> service.testarConexaoAdHoc(invalido))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode())
+                        .isEqualTo(HttpStatus.BAD_REQUEST));
+
+        HttpResponse<String> ok = mock(HttpResponse.class);
+        when(ok.statusCode()).thenReturn(200);
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(ok);
+
+        ConectorFonteDadosRequest reqArcGis = criarRequest(
+                "ArcGIS AdHoc", "ARCGIS_REST", "https://maps.example.org/FeatureServer/0", "REFERENCIA", "FONTE_ADHOC",
+                "GEOJSON", "BEARER_TOKEN", "Authorization", "token-adhoc-123", "MANUAL", null, true);
+
+        Map<String, Object> res = service.testarConexaoAdHoc(reqArcGis);
+
+        assertThat(res.get("sucesso")).isEqualTo(true);
+        assertThat(res.get("statusHttp")).isEqualTo(200);
+
+        ArgumentCaptor<HttpRequest> reqCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(reqCaptor.capture(), any());
+        assertThat(reqCaptor.getValue().uri().toString()).contains("/query?f=json&returnCountOnly=true");
+        assertThat(reqCaptor.getValue().headers().firstValue("Authorization")).contains("Bearer token-adhoc-123");
+        assertThat(reqCaptor.getValue().headers().firstValue("User-Agent"))
+                .contains(ConectorIngestaoService.USER_AGENT_BROWSER);
+        assertThat(reqCaptor.getValue().headers().firstValue("Accept")).contains("*/*");
+        verify(jdbcTemplate, never()).queryForObject(anyString(), eq(Long.class), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("executarFallbackLocal registra mensagem diagnóstica clara em ingestao_drive_controle quando download falha com 403 ou SSL")
+    @SuppressWarnings("unchecked")
+    void deveRegistrarMensagemDiagnosticaQuandoDownloadFalhar() throws Exception {
+        ConectorIngestaoService.ConectorInterno conector = new ConectorIngestaoService.ConectorInterno(
+                14L, "SICAR WAF", null, "OGC_WFS", "https://geoserver.car.gov.br/geoserver/sicar/wfs", "CARGA", null,
+                "SICAR", 1L, 1L, "SHAPE-ZIP", "4674", "cod_imovel", Map.of("typeName", "sicar:sicar_imoveis_pr"),
+                "NONE", null, null, null, "MANUAL", null, true);
+
+        doReturn(List.of(conector)).when(jdbcTemplate).query(contains("c.credencial_cifrada"), any(RowMapper.class), eq(14L));
+        when(jdbcTemplate.queryForObject(contains("INSERT INTO ingestao_drive_controle"), eq(Long.class), any(Object[].class)))
+                .thenReturn(810L)
+                .thenReturn(811L);
+
+        AirflowIngestaoStatusResponse status810 = new AirflowIngestaoStatusResponse(
+                810L, 14L, "SICAR WAF", "run_810", "SICAR WAF", "https://geoserver.car.gov.br/geoserver/sicar/wfs",
+                "CARGA", "SICAR WAF", "EM_ANDAMENTO", "PENDENTE", null, null, null,
+                null, null, null, null, null, "[PENDENTE]", LocalDateTime.now(), null, 0L);
+        AirflowIngestaoStatusResponse status811 = new AirflowIngestaoStatusResponse(
+                811L, 14L, "SICAR WAF", "run_811", "SICAR WAF", "https://geoserver.car.gov.br/geoserver/sicar/wfs",
+                "CARGA", "SICAR WAF", "EM_ANDAMENTO", "PENDENTE", null, null, null,
+                null, null, null, null, null, "[PENDENTE]", LocalDateTime.now(), null, 0L);
+        doReturn(List.of(status810)).when(jdbcTemplate)
+                .query(contains("FROM ingestao_drive_controle c"), any(RowMapper.class), eq(810L));
+        doReturn(List.of(status811)).when(jdbcTemplate)
+                .query(contains("FROM ingestao_drive_controle c"), any(RowMapper.class), eq(811L));
+
+        HttpResponse<InputStream> resp403 = mock(HttpResponse.class);
+        when(resp403.statusCode()).thenReturn(403);
+
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenThrow(new IOException("Airflow offline"))
+                .thenReturn(resp403)
+                .thenThrow(new IOException("Airflow offline"))
+                .thenThrow(new SSLHandshakeException("PKIX path building failed"));
+
+        service.executarConector(14L, null, 1L);
+
+        verify(jdbcTemplate).update(
+                contains("UPDATE ingestao_drive_controle"),
+                eq("FALHOU"),
+                eq("Servidor retornou 403: acesso negado pelo WAF do órgão."),
+                eq(810L));
+
+        service.executarConector(14L, null, 1L);
+
+        verify(jdbcTemplate).update(
+                contains("UPDATE ingestao_drive_controle"),
+                eq("FALHOU"),
+                contains("Falha de handshake TLS/SSL com o servidor do órgão:"),
+                eq(811L));
+
+        ArgumentCaptor<HttpRequest> reqCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient, org.mockito.Mockito.times(4)).send(reqCaptor.capture(), any());
+        List<HttpRequest> reqs = reqCaptor.getAllValues();
+        assertThat(reqs.get(1).headers().firstValue("User-Agent")).contains(ConectorIngestaoService.USER_AGENT_BROWSER);
+        assertThat(reqs.get(1).headers().firstValue("Accept")).contains("*/*");
     }
 
     @Test

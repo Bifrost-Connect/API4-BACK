@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.security.Security;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -22,8 +23,10 @@ import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,6 +40,9 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipFile;
+
+import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLHandshakeException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -79,6 +85,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class ConectorIngestaoService {
 
     private static final Logger log = LoggerFactory.getLogger(ConectorIngestaoService.class);
+
+    static final String USER_AGENT_BROWSER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 GeodataHub/1.0";
+
+    static {
+        habilitarCifrasTlsLegadasParaOrgaos();
+    }
 
     private static final Set<String> PROTOCOLOS_VALIDOS = Set.of("OGC_WFS", "HTTP_DIRECT", "GOOGLE_DRIVE", "ARCGIS_REST");
     private static final Set<String> DESTINOS_VALIDOS = Set.of("CARGA", "REFERENCIA");
@@ -312,12 +324,6 @@ public class ConectorIngestaoService {
                         "REFERENCIA", "INPE_QUEIMADA", "Focos de Calor Ativos VIIRS (NASA FIRMS)",
                         "CSV", "4326", "latitude,acq_date",
                         Map.of(), "API_KEY_QUERY", "MAP_KEY"),
-                template("IBAMA_EMBARGOS_HTTP", "IBAMA Dados Abertos - Áreas Embargadas",
-                        "Download direto do pacote oficial de áreas embargadas publicado pelo IBAMA.",
-                        "HTTP_DIRECT", "https://pamgia.ibama.gov.br/dados/adm_embargos_ibama_a.zip",
-                        "REFERENCIA", "IBAMA_EMBARGO", "Áreas Embargadas (IBAMA)",
-                        "SHAPE-ZIP", "4674", "num_tad,num_tad_,ogc_fid",
-                        Map.of(), "NONE", null),
                 template("GOOGLE_DRIVE", "Google Drive Institucional",
                         "Sincronização de arquivos geoespaciais hospedados em pasta/arquivo no Google Drive via Service Account.",
                         "GOOGLE_DRIVE", "https://drive.google.com/drive/folders/SEU_FOLDER_ID",
@@ -516,6 +522,37 @@ public class ConectorIngestaoService {
     public Map<String, Object> testarConexao(Long id) {
         ConectorInterno conector = buscarConectorInterno(id);
         String segredo = criptoService.decifrar(conector.credencialCifrada());
+        return testarConexaoInterno(conector, segredo);
+    }
+
+    public Map<String, Object> testarConexaoAdHoc(ConectorFonteDadosRequest req) {
+        DadosNormalizados dados = validarENormalizar(req);
+        ConectorInterno conector = new ConectorInterno(
+                null,
+                dados.nome(),
+                dados.descricao(),
+                dados.tipoProtocolo(),
+                dados.urlBase(),
+                dados.destino(),
+                dados.fonteReferencia(),
+                dados.nomeCamadaExibicao(),
+                req.orgaoId(),
+                req.conjuntoId(),
+                dados.formatoDados(),
+                dados.epsgOrigem(),
+                dados.colunaIdentificador(),
+                dados.parametrosJson(),
+                dados.tipoAutenticacao(),
+                dados.nomeCredencial(),
+                null,
+                null,
+                dados.periodicidade(),
+                dados.expressaoCron(),
+                dados.ativo());
+        return testarConexaoInterno(conector, req.credencial());
+    }
+
+    private Map<String, Object> testarConexaoInterno(ConectorInterno conector, String segredo) {
         long inicioNs = System.nanoTime();
 
         if ("GOOGLE_DRIVE".equals(conector.tipoProtocolo())) {
@@ -530,7 +567,7 @@ public class ConectorIngestaoService {
 
         try {
             String urlTeste = montarUrlTeste(conector);
-            HttpRequest.Builder builder = HttpRequest.newBuilder().GET().timeout(TIMEOUT_CONEXAO_HTTP);
+            HttpRequest.Builder builder = novoBuilderNavegador(TIMEOUT_CONEXAO_HTTP);
             String urlFinal = aplicarAutenticacaoHttp(
                     conector.tipoAutenticacao(), conector.nomeCredencial(), segredo, urlTeste, builder);
             builder.uri(URI.create(urlFinal));
@@ -540,14 +577,14 @@ public class ConectorIngestaoService {
             boolean sucesso = status >= 200 && status < 400;
             String msg = sucesso
                     ? "Conexão validada com sucesso (HTTP " + status + ")."
-                    : "Endpoint respondeu com HTTP " + status + ".";
+                    : descreverErroHttp(status);
             return resultadoTeste(sucesso, status, msg, decorridoMs(inicioNs));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return resultadoTeste(false, null, "Teste de conexão interrompido.", decorridoMs(inicioNs));
         } catch (Exception e) {
             return resultadoTeste(false, null,
-                    "Falha ao conectar ao endpoint: " + sanitizarErro(e.getMessage(), segredo),
+                    descreverErroConexao(e, segredo),
                     decorridoMs(inicioNs));
         }
     }
@@ -891,16 +928,7 @@ public class ConectorIngestaoService {
                 mergedParams.putAll(paramsOverride);
             }
 
-            String urlDownload = montarUrlDownload(conector, mergedParams, paramsOverride);
-            HttpRequest.Builder reqBuilder = HttpRequest.newBuilder().GET().timeout(TIMEOUT_DOWNLOAD_HTTP);
-            String urlFinal = aplicarAutenticacaoHttp(
-                    conector.tipoAutenticacao(), conector.nomeCredencial(), segredo, urlDownload, reqBuilder);
-            reqBuilder.uri(URI.create(urlFinal));
-
-            HttpResponse<InputStream> resp = httpClient.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofInputStream());
-            if (resp.statusCode() >= 400) {
-                throw new IllegalStateException("Download falhou com HTTP " + resp.statusCode());
-            }
+            HttpResponse<InputStream> resp = baixarArquivoConector(conector, mergedParams, paramsOverride, segredo);
 
             String extPadrao = resolverExtensaoPadrao(conector.formatoDados(), conector.tipoProtocolo());
             String nomeArquivo = resolverNomeArquivo(resp, conector, mergedParams, extPadrao);
@@ -938,12 +966,41 @@ public class ConectorIngestaoService {
             if (t instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            String errMsg = sanitizarErro(t.getClass().getSimpleName() + ": " + t.getMessage(), segredo);
+            String errMsg;
+            if (t instanceof FalhaHttpDownloadException) {
+                errMsg = sanitizarErro(t.getMessage(), segredo);
+            } else if (t instanceof IOException || temCausaSsl(t)) {
+                errMsg = descreverErroConexao(t, segredo);
+            } else {
+                errMsg = sanitizarErro(t.getClass().getSimpleName() + ": " + t.getMessage(), segredo);
+            }
             log.error("Falha no fallback local do conector #{} (ctrl_id={}): {}", conector.id(), ctrlId, errMsg);
             finalizarControleFalha(ctrlId, conector.id(), errMsg);
         } finally {
             limparDiretorio(tempDir);
         }
+    }
+
+    private HttpResponse<InputStream> baixarArquivoConector(
+            ConectorInterno conector,
+            Map<String, Object> mergedParams,
+            Map<String, Object> paramsOverride,
+            String segredo) throws IOException, InterruptedException {
+        String urlDownload = montarUrlDownload(conector, mergedParams, paramsOverride);
+        HttpRequest.Builder reqBuilder = novoBuilderNavegador(TIMEOUT_DOWNLOAD_HTTP);
+        String urlFinal = aplicarAutenticacaoHttp(
+                conector.tipoAutenticacao(), conector.nomeCredencial(), segredo, urlDownload, reqBuilder);
+        reqBuilder.uri(URI.create(urlFinal));
+
+        HttpResponse<InputStream> resp = httpClient.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofInputStream());
+        if (resp.statusCode() >= 400) {
+            try (InputStream body = resp.body()) {
+                // garante liberação do stream em respostas de erro
+            } catch (IOException ignored) {
+            }
+            throw new FalhaHttpDownloadException(descreverErroHttp(resp.statusCode()));
+        }
+        return resp;
     }
 
     private int ingerirReferenciaLocal(ConectorInterno conector, Path arquivoBaixado) throws IOException {
@@ -1900,6 +1957,88 @@ public class ConectorIngestaoService {
             return limitar(conector.fonteReferencia(), 60);
         }
         return limitar(conector.nome(), 60);
+    }
+
+    private static final class FalhaHttpDownloadException extends IllegalStateException {
+        FalhaHttpDownloadException(String message) {
+            super(message);
+        }
+    }
+
+    static void habilitarCifrasTlsLegadasParaOrgaos() {
+        String disabled = Security.getProperty("jdk.tls.disabledAlgorithms");
+        if (disabled == null || disabled.isBlank()) {
+            return;
+        }
+        List<String> filtrados = new ArrayList<>();
+        boolean alterado = false;
+        for (String token : disabled.split(",")) {
+            String trimmed = token.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (trimmed.toUpperCase(Locale.ROOT).startsWith("TLS_RSA_")) {
+                alterado = true;
+                continue;
+            }
+            filtrados.add(trimmed);
+        }
+        if (alterado) {
+            Security.setProperty("jdk.tls.disabledAlgorithms", String.join(", ", filtrados));
+        }
+    }
+
+    private static HttpRequest.Builder novoBuilderNavegador(Duration timeout) {
+        return HttpRequest.newBuilder()
+                .GET()
+                .timeout(timeout)
+                .header("User-Agent", USER_AGENT_BROWSER)
+                .header("Accept", "*/*");
+    }
+
+    static String descreverErroHttp(int status) {
+        if (status == 403) {
+            return "Servidor retornou 403: acesso negado pelo WAF do órgão.";
+        }
+        if (status == 404) {
+            return "Servidor retornou 404: recurso não encontrado na URL informada.";
+        }
+        if (status == 401) {
+            return "Servidor retornou 401: credencial ou chave de API inválida ou ausente.";
+        }
+        if (status >= 500) {
+            return "Servidor retornou " + status + ": instabilidade temporária no portal externo.";
+        }
+        return "Servidor retornou HTTP " + status + ".";
+    }
+
+    static String descreverErroConexao(Throwable e, String segredo) {
+        Throwable ssl = encontrarCausaSsl(e);
+        if (ssl != null) {
+            String detalhe = ssl.getMessage() != null && !ssl.getMessage().isBlank()
+                    ? ssl.getMessage()
+                    : (e != null ? e.getMessage() : null);
+            return "Falha de handshake TLS/SSL com o servidor do órgão: " + sanitizarErro(detalhe, segredo);
+        }
+        String detalhe = e == null ? null
+                : (e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.getClass().getSimpleName());
+        return "Falha ao conectar ao endpoint: " + sanitizarErro(detalhe, segredo);
+    }
+
+    private static Throwable encontrarCausaSsl(Throwable e) {
+        Set<Throwable> visitados = Collections.newSetFromMap(new IdentityHashMap<>());
+        Throwable atual = e;
+        while (atual != null && visitados.add(atual)) {
+            if (atual instanceof SSLHandshakeException || atual instanceof SSLException) {
+                return atual;
+            }
+            atual = atual.getCause();
+        }
+        return null;
+    }
+
+    private static boolean temCausaSsl(Throwable e) {
+        return encontrarCausaSsl(e) != null;
     }
 
     private static String sanitizarErro(String texto, String segredo) {
