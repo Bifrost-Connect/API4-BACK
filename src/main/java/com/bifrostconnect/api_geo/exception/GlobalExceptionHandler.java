@@ -10,6 +10,10 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.bifrostconnect.api_geo.security.RespostaErroPadrao;
+
+import jakarta.servlet.http.HttpServletRequest;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -99,6 +103,16 @@ public class GlobalExceptionHandler {
                 .body(error);
     }
 
+    // US12 - Tarefa 16: 403 de escopo, chave de outro usuário etc. no mesmo formato do filtro da API Key
+    @ExceptionHandler(ErroPadronizadoException.class)
+    public ResponseEntity<Map<String, Object>> handleErroPadronizado(
+            ErroPadronizadoException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(ex.getStatus())
+                .body(RespostaErroPadrao.corpo(
+                        ex.getStatus(), ex.getCodigo(), ex.getMessage(), request.getRequestURI()));
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleIllegalArgument(
             IllegalArgumentException ex) {

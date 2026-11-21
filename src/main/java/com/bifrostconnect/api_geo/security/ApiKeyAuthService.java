@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -13,6 +14,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +26,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Service
 public class ApiKeyAuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(ApiKeyAuthService.class);
+
+    public static final int LIMITE_REQUISICOES_POR_MINUTO = 60;
+    private static final long JANELA_RATE_LIMIT_MS = 60_000L;
+    private static final int TAMANHO_PREFIXO_LOG = 12; // o mesmo que fica em chaves_api.prefixo_chave
     private static final int LIMITE_REQUISICOES_POR_MINUTO = 60;
     private static final long TTL_CACHE_MS = 60_000L; // 1 min (invalidado antes se revogar)
 
@@ -40,6 +49,48 @@ public class ApiKeyAuthService {
         }
     }
 
+    // US12 - Tarefa 16: por que a chave foi recusada. Tudo isso é 401; o código diferente é só pro
+    // parceiro saber se precisa pedir chave nova (expirada/revogada) ou se mandou errado
+    public enum MotivoRecusa {
+        AUSENTE("API_KEY_AUSENTE", "Informe a API Key no header X-API-Key."),
+        INEXISTENTE("API_KEY_INVALIDA", "API Key inválida."),
+        EXPIRADA("API_KEY_EXPIRADA", "API Key expirada. Solicite uma nova chave."),
+        REVOGADA("API_KEY_REVOGADA", "API Key revogada. Solicite uma nova chave."),
+        USUARIO_INATIVO("API_KEY_USUARIO_INATIVO", "API Key vinculada a um usuário inativo.");
+
+        private final String codigo;
+        private final String mensagem;
+
+        MotivoRecusa(String codigo, String mensagem) {
+            this.codigo = codigo;
+            this.mensagem = mensagem;
+        }
+
+        public String getCodigo() {
+            return codigo;
+        }
+
+        public String getMensagem() {
+            return mensagem;
+        }
+    }
+
+    // ou vem o contexto (chave aceita) ou vem o motivo da recusa, nunca os dois
+    public record ResultadoAutenticacao(ContextoApiKey contexto, MotivoRecusa motivo) {
+
+        static ResultadoAutenticacao aceita(ContextoApiKey contexto) {
+            return new ResultadoAutenticacao(contexto, null);
+        }
+
+        static ResultadoAutenticacao recusada(MotivoRecusa motivo) {
+            return new ResultadoAutenticacao(null, motivo);
+        }
+
+        public boolean autenticada() {
+            return contexto != null;
+        }
+    }
+
     private record EntradaCache(ContextoApiKey contexto, long expiraCacheEmMs) {}
 
     private static class JanelaRateLimit {
@@ -53,6 +104,7 @@ public class ApiKeyAuthService {
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     // Tarefa 15: Cache em memória indexado pelo hash + índice reverso por ID para revogação instantânea
     private final ConcurrentHashMap<String, EntradaCache> cachePorHash = new ConcurrentHashMap<>();
@@ -61,27 +113,40 @@ public class ApiKeyAuthService {
     // Tarefa 14: Controle de 60 req/min por chave
     private final ConcurrentHashMap<Long, JanelaRateLimit> rateLimitPorChave = new ConcurrentHashMap<>();
 
+    @Autowired
     public ApiKeyAuthService(JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        this(jdbc, objectMapper, Clock.systemDefaultZone());
+    }
+
+    // Tarefa 17: os testes passam um relógio próprio pra simular a chave vencendo sem sleep
+    ApiKeyAuthService(JdbcTemplate jdbc, ObjectMapper objectMapper, Clock clock) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.clock = clock;
     }
 
     public Optional<ContextoApiKey> autenticar(String chaveBruta) {
+        return Optional.ofNullable(validar(chaveBruta).contexto());
+    }
+
+    public ResultadoAutenticacao validar(String chaveBruta) {
         if (chaveBruta == null || chaveBruta.isBlank()) {
-            return Optional.empty();
+            return ResultadoAutenticacao.recusada(MotivoRecusa.AUSENTE);
         }
 
-        String hash = gerarSha256Hex(chaveBruta.trim());
-        long agoraMs = System.currentTimeMillis();
+        String chave = chaveBruta.trim();
+        String hash = gerarSha256Hex(chave);
+        long agoraMs = clock.millis();
 
         EntradaCache emCache = cachePorHash.get(hash);
         if (emCache != null && emCache.expiraCacheEmMs() > agoraMs) {
             ContextoApiKey ctx = emCache.contexto();
-            if (ctx.dataExpiracao() != null && ctx.dataExpiracao().isBefore(Instant.now())) {
+            // a chave pode vencer enquanto está no cache: confere de novo a cada chamada
+            if (ctx.dataExpiracao() != null && !ctx.dataExpiracao().isAfter(clock.instant())) {
                 invalidarCachePorId(ctx.chaveId());
-                return Optional.empty();
+                return recusar(MotivoRecusa.EXPIRADA, chave);
             }
-            return Optional.of(ctx);
+            return ResultadoAutenticacao.aceita(ctx);
         }
 
         // Consulta no banco validando as 4 condições da Tarefa 12
@@ -108,28 +173,81 @@ public class ApiKeyAuthService {
 
         if (encontrados.isEmpty()) {
             cachePorHash.remove(hash);
-            return Optional.empty();
+            return recusar(diagnosticarRecusa(hash), chave);
         }
 
         ContextoApiKey contexto = encontrados.get(0);
         cachePorHash.put(hash, new EntradaCache(contexto, agoraMs + TTL_CACHE_MS));
         hashPorChaveId.put(contexto.chaveId(), hash);
 
-        return Optional.of(contexto);
+        return ResultadoAutenticacao.aceita(contexto);
+    }
+
+    // Tarefa 16: só roda quando a chave já foi recusada, pra dizer o motivo. Continua buscando pelo
+    // hash: a chave em texto nunca vai pro banco, nem aqui
+    private MotivoRecusa diagnosticarRecusa(String hash) {
+        List<MotivoRecusa> motivos = jdbc.query("""
+                SELECT c.status,
+                       (c.data_expiracao IS NOT NULL AND c.data_expiracao <= CURRENT_TIMESTAMP) AS vencida,
+                       u.ativo
+                  FROM chaves_api c
+                  JOIN usuario u ON u.id = c.usuario_id
+                 WHERE c.hash_chave_sha256 = ?
+                 LIMIT 1
+                """,
+                (rs, rowNum) -> {
+                    String status = rs.getString("status");
+                    if ("REVOGADA".equals(status)) {
+                        return MotivoRecusa.REVOGADA;
+                    }
+                    if ("EXPIRADA".equals(status) || rs.getBoolean("vencida")) {
+                        return MotivoRecusa.EXPIRADA;
+                    }
+                    if (!rs.getBoolean("ativo")) {
+                        return MotivoRecusa.USUARIO_INATIVO;
+                    }
+                    return MotivoRecusa.INEXISTENTE;
+                },
+                hash);
+
+        return motivos.isEmpty() ? MotivoRecusa.INEXISTENTE : motivos.get(0);
+    }
+
+    // no log vai só o começo da chave (o mesmo prefixo que a tela de chaves mostra), nunca ela inteira
+    private ResultadoAutenticacao recusar(MotivoRecusa motivo, String chave) {
+        log.info("API Key recusada: motivo={}, prefixo={}", motivo, mascarar(chave));
+        return ResultadoAutenticacao.recusada(motivo);
+    }
+
+    static String mascarar(String chave) {
+        if (chave == null || chave.length() <= TAMANHO_PREFIXO_LOG) {
+            return "****";
+        }
+        return chave.substring(0, TAMANHO_PREFIXO_LOG) + "****";
     }
 
     // Tarefa 14: Máximo de 60 chamadas por minuto por API Key
     public boolean permitirRequisicao(Long chaveId) {
-        long agoraMs = System.currentTimeMillis();
+        long agoraMs = clock.millis();
         JanelaRateLimit janela = rateLimitPorChave.computeIfAbsent(chaveId, id -> new JanelaRateLimit(agoraMs));
 
         synchronized (janela) {
-            if (agoraMs - janela.inicioJanelaMs >= 60_000L) {
+            if (agoraMs - janela.inicioJanelaMs >= JANELA_RATE_LIMIT_MS) {
                 janela.inicioJanelaMs = agoraMs;
                 janela.contador.set(0);
             }
             return janela.contador.incrementAndGet() <= LIMITE_REQUISICOES_POR_MINUTO;
         }
+    }
+
+    // Tarefa 16: vai no Retry-After do 429 (segundos até a janela de 1 minuto virar)
+    public long segundosAteLiberar(Long chaveId) {
+        JanelaRateLimit janela = rateLimitPorChave.get(chaveId);
+        if (janela == null) {
+            return 0;
+        }
+        long restanteMs = JANELA_RATE_LIMIT_MS - (clock.millis() - janela.inicioJanelaMs);
+        return Math.max(1, (restanteMs + 999) / 1000);
     }
 
     // Tarefa 14: Atualiza ultimo_uso_em e registra log de acesso

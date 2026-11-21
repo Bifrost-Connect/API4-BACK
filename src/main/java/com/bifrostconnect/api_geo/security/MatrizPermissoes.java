@@ -39,7 +39,11 @@ public final class MatrizPermissoes {
                 GEOMETRIA_EDITAR, ANALISE_EXECUTAR, COMPARAR_SAFRAS, PUBLICACAO_CONSULTAR, RELATORIO_EXPORTAR,
                 EXPORTACAO_HISTORICO_CONSULTAR, CHAVE_API_GERENCIAR)));
 
-        MATRIZ.put("ANALISTA", uniao(CONSUMO, EnumSet.of(ANALISE_EXECUTAR, COMPARAR_SAFRAS, RELATORIO_EXPORTAR)));
+        MATRIZ.put("ANALISTA", uniao(CONSUMO, EnumSet.of(ANALISE_EXECUTAR, RELATORIO_EXPORTAR)));
+
+        // US12 - Tarefa 16: o integrador cuida das próprias chaves; mexer na chave de outro dá 403 (ChaveApiService)
+        MATRIZ.put("INTEGRADOR_EXTERNO", EnumSet.of(
+                CATALOGO_CONSULTAR, MAPA_CONSULTAR, RELATORIO_EXPORTAR, CHAVE_API_GERENCIAR));
     }
 
     // o que a exceção SoD (usuario.excecao_sod_autorizada) libera pro Operador.

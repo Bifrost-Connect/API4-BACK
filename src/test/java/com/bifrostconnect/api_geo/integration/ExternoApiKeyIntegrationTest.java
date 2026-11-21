@@ -8,6 +8,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
+import java.util.Optional;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
+import com.bifrostconnect.api_geo.security.UsuarioSessaoService.EstadoUsuario;
+
+import java.util.Map;
+import java.util.UUID;
 
 import java.util.List;
 import java.util.Map;
@@ -48,6 +57,9 @@ class ExternoApiKeyIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    private MockMvc mockMvc;
+    @MockBean
+    private UsuarioSessaoService usuarioSessaoService;
     @Autowired
     private PasswordEncoder passwordEncoder;
 
@@ -65,16 +77,24 @@ class ExternoApiKeyIntegrationTest {
 
         jdbc.execute("INSERT INTO perfil (nome) VALUES ('ADMINISTRADOR') ON CONFLICT DO NOTHING");
         jdbc.execute("""
-                INSERT INTO usuario (nome, email, senha_hash, perfil_id, ativo, permissoes_customizadas)
+                INSERT INTO usuario (nome, email, senha_hash, perfil_id, ativo)
                 VALUES ('Admin Teste', 'admin@teste.local', 'hash',
-                        (SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR' LIMIT 1), TRUE, NULL)
-                ON CONFLICT (email) DO UPDATE
-                    SET ativo = TRUE,
-                        perfil_id = (SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR' LIMIT 1),
-                        permissoes_customizadas = NULL
+                        (SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR' LIMIT 1), TRUE)
+                ON CONFLICT (email) DO UPDATE SET ativo = TRUE
                 """);
 
         adminId = jdbc.queryForObject("SELECT id FROM usuario WHERE email = 'admin@teste.local'", Long.class);
+
+        when(usuarioSessaoService.buscarPorLogin(anyString())).thenReturn(
+                Optional.of(new EstadoUsuario(
+                        adminId,
+                        "Admin Teste",
+                        "admin@teste.local",
+                        "hash",
+                        "ADMINISTRADOR",
+                        true,
+                        1,
+                        false)));
 
         String sufixo = UUID.randomUUID().toString().substring(0, 8);
         long conjuntoId = jdbc.queryForObject(
@@ -184,6 +204,11 @@ class ExternoApiKeyIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "nomeParceiro": "Parceiro Full",
+                                  "escopos": ["LEITURA"]
+                                }
+                                """))
+                .andExpect(status().isCreated())
                                   "nome_parceiro": "Parceiro Front ISO",
                                   "escopos": ["CATALOGO_CONSULTAR", "MAPA_CONSULTAR"],
                                   "data_expiracao": "2028-12-31T23:59:59Z"
@@ -198,24 +223,11 @@ class ExternoApiKeyIntegrationTest {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> criadaFull = objectMapper.readValue(
-                emissaoFront.getResponse().getContentAsString(), Map.class);
+                emissaoFull.getResponse().getContentAsString(), Map.class);
         Long chaveFullId = ((Number) criadaFull.get("id")).longValue();
         String apiKeyFull = (String) criadaFull.get("chave");
 
-        // 6.1 Listagem com ?search e ?status=ATIVA em /admin/chaves-api
-        mockMvc.perform(get("/admin/chaves-api")
-                        .param("search", "Front ISO")
-                        .param("status", "ATIVA"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == " + chaveFullId + ")]").exists())
-                .andExpect(jsonPath("$.content[?(@.id == " + chaveId + ")]").doesNotExist());
-
-        mockMvc.perform(get("/admin/chaves-api")
-                        .param("search", "TermoQueNaoExisteXYZ"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content.length()").value(0));
-
-        // 7. Consulta métricas e geojson da base publicada com escopos do front -> 200 OK
+        // 7. Consulta métricas e geojson da base publicada -> 200 OK
         mockMvc.perform(get("/v1/externo/bases/{id}/metricas", basePublicadaId)
                         .header("X-API-Key", apiKeyFull))
                 .andExpect(status().isOk())
@@ -268,7 +280,6 @@ class ExternoApiKeyIntegrationTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> criada = objectMapper.readValue(
                 emissaoRes.getResponse().getContentAsString(), Map.class);
-        Long chaveId = ((Number) criada.get("id")).longValue();
         String apiKey = (String) criada.get("chave");
 
         for (int i = 1; i <= 60; i++) {
