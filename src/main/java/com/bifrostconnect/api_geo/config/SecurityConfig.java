@@ -107,9 +107,6 @@ public class SecurityConfig {
                 new ApiKeyAuthenticationFilter(apiKeyAuthService),
                 BasicAuthenticationFilter.class)
             .addFilterBefore(
-                new ApiKeyAuthenticationFilter(apiKeyAuthService), // <-- ADICIONAR FILTRO EXTERNO
-                BasicAuthenticationFilter.class)
-            .addFilterBefore(
                 new JwtAuthenticationFilter(jwtService, usuarioSessaoService),
                 BasicAuthenticationFilter.class)
             .httpBasic(basic -> basic.authenticationEntryPoint(authenticationEntryPoint));
