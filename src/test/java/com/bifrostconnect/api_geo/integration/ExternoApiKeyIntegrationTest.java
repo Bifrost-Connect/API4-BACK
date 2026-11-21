@@ -1,6 +1,8 @@
 package com.bifrostconnect.api_geo.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -11,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -19,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,6 +34,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
+import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
+import com.bifrostconnect.api_geo.security.UsuarioSessaoService.EstadoUsuario;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -38,6 +44,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 class ExternoApiKeyIntegrationTest {
 
     private static final String SENHA_TESTE = "Senha@Forte123";
+    private static final String EMAIL_ADMIN = "admin@teste.local";
 
     @Autowired
     private WebApplicationContext context;
@@ -50,6 +57,11 @@ class ExternoApiKeyIntegrationTest {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    // SpyBean: só o admin do @WithMockUser é "stubado"; os demais logins (GESTOR, ANALISTA...)
+    // continuam usando a implementação real e funcionam normalmente em /auth/login.
+    @SpyBean
+    private UsuarioSessaoService usuarioSessaoService;
 
     private MockMvc mockMvc;
     private long adminId;
@@ -65,16 +77,24 @@ class ExternoApiKeyIntegrationTest {
 
         jdbc.execute("INSERT INTO perfil (nome) VALUES ('ADMINISTRADOR') ON CONFLICT DO NOTHING");
         jdbc.execute("""
-                INSERT INTO usuario (nome, email, senha_hash, perfil_id, ativo, permissoes_customizadas)
+                INSERT INTO usuario (nome, email, senha_hash, perfil_id, ativo)
                 VALUES ('Admin Teste', 'admin@teste.local', 'hash',
-                        (SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR' LIMIT 1), TRUE, NULL)
-                ON CONFLICT (email) DO UPDATE
-                    SET ativo = TRUE,
-                        perfil_id = (SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR' LIMIT 1),
-                        permissoes_customizadas = NULL
+                        (SELECT id FROM perfil WHERE nome = 'ADMINISTRADOR' LIMIT 1), TRUE)
+                ON CONFLICT (email) DO UPDATE SET ativo = TRUE
                 """);
 
         adminId = jdbc.queryForObject("SELECT id FROM usuario WHERE email = 'admin@teste.local'", Long.class);
+
+        doReturn(Optional.of(new EstadoUsuario(
+                adminId,
+                "Admin Teste",
+                EMAIL_ADMIN,
+                "hash",
+                "ADMINISTRADOR",
+                true,
+                1,
+                false)))
+                .when(usuarioSessaoService).buscarPorLogin(EMAIL_ADMIN);
 
         String sufixo = UUID.randomUUID().toString().substring(0, 8);
         long conjuntoId = jdbc.queryForObject(
@@ -179,7 +199,7 @@ class ExternoApiKeyIntegrationTest {
                 .andExpect(status().isNotFound());
 
         // 6. Emite chave via /admin/chaves-api (contrato do front) com nome_parceiro, escopos do front e data ISO Z
-        MvcResult emissaoFront = mockMvc.perform(post("/admin/chaves-api")
+        MvcResult emissaoFull = mockMvc.perform(post("/admin/chaves-api")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -198,24 +218,11 @@ class ExternoApiKeyIntegrationTest {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> criadaFull = objectMapper.readValue(
-                emissaoFront.getResponse().getContentAsString(), Map.class);
+                emissaoFull.getResponse().getContentAsString(), Map.class);
         Long chaveFullId = ((Number) criadaFull.get("id")).longValue();
         String apiKeyFull = (String) criadaFull.get("chave");
 
-        // 6.1 Listagem com ?search e ?status=ATIVA em /admin/chaves-api
-        mockMvc.perform(get("/admin/chaves-api")
-                        .param("search", "Front ISO")
-                        .param("status", "ATIVA"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == " + chaveFullId + ")]").exists())
-                .andExpect(jsonPath("$.content[?(@.id == " + chaveId + ")]").doesNotExist());
-
-        mockMvc.perform(get("/admin/chaves-api")
-                        .param("search", "TermoQueNaoExisteXYZ"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content.length()").value(0));
-
-        // 7. Consulta métricas e geojson da base publicada com escopos do front -> 200 OK
+        // 7. Consulta métricas e geojson da base publicada -> 200 OK
         mockMvc.perform(get("/v1/externo/bases/{id}/metricas", basePublicadaId)
                         .header("X-API-Key", apiKeyFull))
                 .andExpect(status().isOk())

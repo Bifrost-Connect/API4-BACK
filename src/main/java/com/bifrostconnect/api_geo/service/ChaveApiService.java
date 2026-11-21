@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.bifrostconnect.api_geo.dto.EmitirChaveApiRequest;
+import com.bifrostconnect.api_geo.exception.ErroPadronizadoException;
 import com.bifrostconnect.api_geo.exception.RecursoNaoEncontradoException;
 import com.bifrostconnect.api_geo.exception.RequisicaoInvalidaException;
 import com.bifrostconnect.api_geo.security.ApiKeyAuthService;
@@ -37,6 +38,7 @@ public class ChaveApiService {
     private static final Set<String> STATUS_VALIDOS = Set.of("ATIVA", "REVOGADA", "EXPIRADA");
     private static final int TAMANHO_MAXIMO_PAGINA = 100;
     private static final String MASCARA = "********";
+    private static final String PERFIL_ADMINISTRADOR = "ADMINISTRADOR";
 
     // status_efetivo: uma chave ATIVA já vencida aparece como EXPIRADA sem alterar nada no banco
     private static final String SELECT_CHAVES = """
@@ -109,22 +111,30 @@ public class ChaveApiService {
         return resposta;
     }
 
+    // GET /integracoes/chaves e /admin/chaves-api (só metadados e prefixo mascarado, nunca o hash nem a chave)
+    // Tarefa 16: o Administrador vê todas; o integrador só as que ele emitiu
     @Transactional(readOnly = true)
-    public Map<String, Object> listar(String status, int page, int size) {
-        return listar(status, null, page, size);
+    public Map<String, Object> listar(String status, int page, int size, String login) {
+        return listar(status, null, page, size, login);
     }
 
-    // Só metadados e prefixo, nunca o hash nem a chave
     @Transactional(readOnly = true)
-    public Map<String, Object> listar(String status, String search, int page, int size) {
+    public Map<String, Object> listar(String status, String search, int page, int size, String login) {
 
         if (page < 0 || size < 1 || size > TAMANHO_MAXIMO_PAGINA) {
             throw new RequisicaoInvalidaException(
                     "Paginação inválida: page >= 0 e size entre 1 e " + TAMANHO_MAXIMO_PAGINA + ".");
         }
 
-        StringBuilder where = new StringBuilder(" WHERE 1=1 ");
+        EstadoUsuario usuario = resolverUsuario(login);
+
+        StringBuilder where = new StringBuilder(" WHERE 1 = 1");
         List<Object> args = new ArrayList<>();
+
+        if (!ehAdministrador(usuario)) {
+            where.append(" AND x.usuario_id = ?");
+            args.add(usuario.id());
+        }
 
         if (status != null && !status.isBlank()) {
             String statusNormalizado = status.trim().toUpperCase(Locale.ROOT);
@@ -171,12 +181,30 @@ public class ChaveApiService {
         return resultado;
     }
 
+    // PATCH /integracoes/chaves/{id}/revogar e /admin/chaves-api/{id}/revogar
     // Efeito imediato: o status vira REVOGADA na própria transação (quem autentica só aceita ATIVA).
     // Se a chave já estava revogada, nada muda e a data original da revogação é preservada.
+    // Tarefa 16: integrador revogando chave de outro usuário -> 403 (o Administrador pode revogar qualquer uma)
     @Transactional
     public Map<String, Object> revogar(Long id, String login) {
 
-        Long usuarioId = resolverUsuarioId(login);
+        EstadoUsuario usuario = resolverUsuario(login);
+        Long usuarioId = usuario.id();
+
+        // FOR UPDATE: segura a linha até o fim, pra ninguém trocar o dono/status no meio
+        List<Long> donos = jdbc.queryForList(
+                "SELECT usuario_id FROM chaves_api WHERE id = ? FOR UPDATE", Long.class, id);
+
+        if (donos.isEmpty()) {
+            throw new RecursoNaoEncontradoException("Chave de API não encontrada: " + id);
+        }
+
+        if (!ehAdministrador(usuario) && !donos.get(0).equals(usuarioId)) {
+            throw new ErroPadronizadoException(
+                    HttpStatus.FORBIDDEN,
+                    "CHAVE_DE_OUTRO_USUARIO",
+                    "Você só pode revogar as chaves de API emitidas por você.");
+        }
 
         int alteradas = jdbc.update("""
                 UPDATE chaves_api
@@ -239,11 +267,18 @@ public class ChaveApiService {
     // ------------------------------------------------------------------
 
     private Long resolverUsuarioId(String login) {
+        return resolverUsuario(login).id();
+    }
+
+    private EstadoUsuario resolverUsuario(String login) {
         return usuarioSessaoService.buscarPorLogin(login)
-                .map(EstadoUsuario::id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.FORBIDDEN,
                         "Usuário autenticado não encontrado na base de usuários."));
+    }
+
+    private static boolean ehAdministrador(EstadoUsuario usuario) {
+        return PERFIL_ADMINISTRADOR.equalsIgnoreCase(usuario.perfil());
     }
 
     private Map<String, Object> buscarMetadados(Long id) {

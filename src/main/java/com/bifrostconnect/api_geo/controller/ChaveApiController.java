@@ -50,11 +50,11 @@ public class ChaveApiController {
     @GetMapping
     public Map<String, Object> listar(
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            Authentication auth) {
 
-        return service.listar(status, search, page, size);
+        return service.listar(status, page, size, auth.getName());
     }
 
     @PatchMapping("/{id}/revogar")

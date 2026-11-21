@@ -10,6 +10,10 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import com.bifrostconnect.api_geo.security.RespostaErroPadrao;
+
+import jakarta.servlet.http.HttpServletRequest;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -57,7 +61,7 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(error); // <-- Faltava o body e o fechamento do método
+                .body(error);
     }
 
     // US09 - Tarefa 8: ID inexistente sai sempre no mesmo formato { "erro": ... } com 404
@@ -97,6 +101,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(error);
+    }
+
+    // US12 - Tarefa 16: 403 de escopo, chave de outro usuário etc. no mesmo formato do filtro da API Key
+    @ExceptionHandler(ErroPadronizadoException.class)
+    public ResponseEntity<Map<String, Object>> handleErroPadronizado(
+            ErroPadronizadoException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(ex.getStatus())
+                .body(RespostaErroPadrao.corpo(
+                        ex.getStatus(), ex.getCodigo(), ex.getMessage(), request.getRequestURI()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

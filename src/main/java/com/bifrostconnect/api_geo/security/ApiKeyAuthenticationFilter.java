@@ -13,6 +13,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.bifrostconnect.api_geo.security.ApiKeyAuthService.ContextoApiKey;
+import com.bifrostconnect.api_geo.security.ApiKeyAuthService.ResultadoAutenticacao;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -30,16 +31,19 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         this.apiKeyAuthService = apiKeyAuthService;
     }
 
+    // Olha a URI inteira (menos o context path). Antes usava o getServletPath(), mas com
+    // spring.mvc.servlet.path=/api ele devolve só "/api" e o filtro nunca rodava fora dos testes
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = extrairCaminho(request);
-        if (path == null) {
+        String uri = request.getRequestURI();
+        if (uri == null) {
             return true;
         }
-        return !(path.equals("/v1/externo")
-                || path.startsWith("/v1/externo/")
-                || path.equals("/api/v1/externo")
-                || path.startsWith("/api/v1/externo/"));
+        String contexto = request.getContextPath();
+        String path = contexto != null && !contexto.isEmpty() && uri.startsWith(contexto)
+                ? uri.substring(contexto.length())
+                : uri;
+        return !(path.startsWith("/v1/externo") || path.startsWith("/api/v1/externo"));
     }
 
     @Override
@@ -49,29 +53,34 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain) throws ServletException, IOException {
 
         String apiKey = request.getHeader(HEADER_API_KEY);
-        Optional<ContextoApiKey> contextoOpt = apiKeyAuthService.autenticar(apiKey);
+        ResultadoAutenticacao resultado = apiKeyAuthService.validar(apiKey);
 
-        if (contextoOpt.isEmpty()) {
-            escreverErroJson(response, HttpStatus.UNAUTHORIZED,
-                    "API Key ausente, inválida, expirada, revogada ou vinculada a usuário inativo.");
+        // Tarefa 16: ausente, inexistente, expirada, revogada (ou dono inativo) -> 401
+        if (!resultado.autenticada()) {
+            response.setHeader("WWW-Authenticate", "ApiKey header=\"" + HEADER_API_KEY + "\"");
+            RespostaErroPadrao.escrever(response, HttpStatus.UNAUTHORIZED,
+                    resultado.motivo().getCodigo(), resultado.motivo().getMensagem(), request.getRequestURI());
             return;
         }
 
-        ContextoApiKey contexto = contextoOpt.get();
-        String ip = extrairIp(request);
-        String rota = request.getRequestURI();
+        ContextoApiKey contexto = resultado.contexto();
 
-        // Tarefa 14: Rate Limiting
+        // Tarefa 14 / 16: passou do limite por minuto -> 429 com o tempo de espera no Retry-After
         if (!apiKeyAuthService.permitirRequisicao(contexto.chaveId())) {
-            apiKeyAuthService.registrarLogAcessoExterno(
-                    contexto.chaveId(), rota, HttpStatus.TOO_MANY_REQUESTS.value(), ip);
-            escreverErroJson(response, HttpStatus.TOO_MANY_REQUESTS,
-                    "Limite de 60 requisições por minuto excedido para esta API Key.");
+            response.setHeader("Retry-After", String.valueOf(apiKeyAuthService.segundosAteLiberar(contexto.chaveId())));
+            response.setHeader("X-RateLimit-Limit", String.valueOf(ApiKeyAuthService.LIMITE_REQUISICOES_POR_MINUTO));
+            response.setHeader("X-RateLimit-Remaining", "0");
+            RespostaErroPadrao.escrever(response, HttpStatus.TOO_MANY_REQUESTS,
+                    "LIMITE_REQUISICOES_EXCEDIDO",
+                    "Limite de " + ApiKeyAuthService.LIMITE_REQUISICOES_POR_MINUTO
+                            + " requisições por minuto excedido para esta API Key.",
+                    request.getRequestURI());
             return;
         }
 
         // Registra o uso e a auditoria
-        apiKeyAuthService.registrarUsoEAuditoria(contexto, request.getMethod(), rota, ip);
+        String ip = extrairIp(request);
+        apiKeyAuthService.registrarUsoEAuditoria(contexto, request.getMethod(), request.getRequestURI(), ip);
 
         // Injeta o contexto na requisição e autentica no Spring Security
         request.setAttribute(ATTR_CONTEXTO_API_KEY, contexto);
@@ -84,44 +93,8 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
                 null,
                 authorities.isEmpty() ? List.of(new SimpleGrantedAuthority("ROLE_EXTERNO")) : authorities);
 
-        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
-        securityContext.setAuthentication(auth);
-        SecurityContextHolder.setContext(securityContext);
-
-        boolean falhou = false;
-        try {
-            filterChain.doFilter(request, response);
-        } catch (IOException | ServletException | RuntimeException ex) {
-            falhou = true;
-            throw ex;
-        } finally {
-            int statusHttp = response.getStatus();
-            if (falhou && statusHttp < 400) {
-                statusHttp = HttpStatus.INTERNAL_SERVER_ERROR.value();
-            }
-            apiKeyAuthService.registrarLogAcessoExterno(contexto.chaveId(), rota, statusHttp, ip);
-        }
-    }
-
-    private String extrairCaminho(HttpServletRequest request) {
-        String uri = request.getRequestURI();
-        String contextPath = request.getContextPath();
-        if (uri != null && !uri.isEmpty()) {
-            if (contextPath != null && !contextPath.isEmpty() && uri.startsWith(contextPath)) {
-                return uri.substring(contextPath.length());
-            }
-            return uri;
-        }
-        String servletPath = request.getServletPath() != null ? request.getServletPath() : "";
-        String pathInfo = request.getPathInfo() != null ? request.getPathInfo() : "";
-        return servletPath + pathInfo;
-    }
-
-    private void escreverErroJson(HttpServletResponse response, HttpStatus status, String mensagem) throws IOException {
-        response.setStatus(status.value());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding("UTF-8");
-        response.getWriter().write("{\"erro\":\"" + mensagem.replace("\"", "\\\"") + "\"}");
+        SecurityContextHolder.getContext().setAuthentication(auth);
+        filterChain.doFilter(request, response);
     }
 
     private String extrairIp(HttpServletRequest request) {
