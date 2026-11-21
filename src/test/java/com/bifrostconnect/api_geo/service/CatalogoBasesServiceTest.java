@@ -131,4 +131,24 @@ class CatalogoBasesServiceTest {
         assertFalse(item.containsKey("cobertura_espacial"));
         assertFalse(item.containsKey("total_feicoes"));
     }
+
+    @Test
+    @DisplayName("Subquery de total_feicoes consulta base_localizacao_cache com fallback para feicao_carga")
+    void deveConsultarCacheDeLocalizacaoComFallbackEmTotalFeicoes() {
+        when(jdbcTemplate.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(1L);
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
+
+        service.listarBases(SEM_FILTRO, 0, 20, null, null);
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).queryForList(sql.capture(), any(Object[].class));
+
+        String consulta = sql.getValue();
+        assertTrue(consulta.contains("CASE WHEN v.pronta_para_consulta THEN"));
+        assertTrue(consulta.contains("COALESCE("));
+        assertTrue(consulta.contains("SELECT blc.total_feicoes FROM base_localizacao_cache blc WHERE blc.processo_id = v.id"));
+        assertTrue(consulta.contains("SELECT COUNT(*) FROM feicao_carga fc"));
+        assertTrue(consulta.contains("JOIN vw_copia_vigente cv ON cv.arquivo_processado_id = fc.arquivo_processado_id"));
+        assertTrue(consulta.contains("WHERE cv.processo_id = v.id"));
+    }
 }
