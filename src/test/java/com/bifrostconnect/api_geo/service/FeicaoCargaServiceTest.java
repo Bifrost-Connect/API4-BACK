@@ -143,4 +143,41 @@ class FeicaoCargaServiceTest {
         assertEquals(1201, resultado.carregadas());
         assertEquals(List.of(500, 500, 201), banco.tamanhoDosLotes);
     }
+
+    @Test
+    void limitaRejeitadasEmMemoriaQuandoMuitasFeicoesFalham() throws Exception {
+        String aberto = "{\"type\":\"Polygon\",\"coordinates\":[[[-46.05,-15],[-46.04,-15],[-46.04,-15.01],[-46.05,-15.01],[-46.06,-15]]]}";
+        String[] features = new String[600];
+        for (int i = 0; i < features.length; i++) {
+            features[i] = feicao("INV-" + i, aberto);
+        }
+
+        BancoFalso banco = new BancoFalso();
+        FeicaoCargaService.ResultadoCarga resultado = new FeicaoCargaService(banco).carregar(10L, geojson(features));
+
+        assertEquals(600, resultado.totalFeicoes());
+        assertEquals(0, resultado.carregadas());
+        assertEquals(500, FeicaoCargaService.LIMITE_REJEITADAS_MEMORIA);
+        assertEquals(FeicaoCargaService.LIMITE_REJEITADAS_MEMORIA, resultado.rejeitadas().size());
+    }
+
+    @Test
+    void limitaRejeitadasEmMemoriaComMisturaDeInvalidasEDuplicadas() throws Exception {
+        String aberto = "{\"type\":\"Polygon\",\"coordinates\":[[[-46.05,-15],[-46.04,-15],[-46.04,-15.01],[-46.05,-15.01],[-46.06,-15]]]}";
+        String[] features = new String[601];
+        features[0] = feicao("DUP-01", QUADRADO);
+        for (int i = 1; i <= 300; i++) {
+            features[i] = feicao("INV-" + i, aberto);
+        }
+        for (int i = 301; i < features.length; i++) {
+            features[i] = feicao("DUP-01", QUADRADO);
+        }
+
+        BancoFalso banco = new BancoFalso();
+        FeicaoCargaService.ResultadoCarga resultado = new FeicaoCargaService(banco).carregar(11L, geojson(features));
+
+        assertEquals(601, resultado.totalFeicoes());
+        assertEquals(1, resultado.carregadas());
+        assertEquals(FeicaoCargaService.LIMITE_REJEITADAS_MEMORIA, resultado.rejeitadas().size());
+    }
 }

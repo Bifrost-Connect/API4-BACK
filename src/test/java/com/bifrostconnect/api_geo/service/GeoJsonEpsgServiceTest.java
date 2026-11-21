@@ -105,4 +105,14 @@ class GeoJsonEpsgServiceTest {
         assertThrows(IllegalArgumentException.class, () -> detectar("corrompido.geojson", "Conteudo invalido para geojson"));
         assertThrows(IllegalArgumentException.class, () -> detectar("truncado.geojson", "{\"type\":\"FeatureCollection\",\"features\":["));
     }
+
+    @Test
+    void paraCrsAntesDasFeicoesSemLerRestanteDasFeicoes() throws Exception {
+        assertEquals("31983", detectar("crs-antes.geojson", """
+                {"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::31983"}},"features":[TOKEN_INVALIDO_NAO_LIDO
+                """));
+        assertEquals("4674", detectar("crs-antes-do-type.geojson", """
+                {"crs":{"type":"name","properties":{"name":"EPSG:4674"}},"type":"FeatureCollection","features":[TOKEN_INVALIDO_NAO_LIDO
+                """));
+    }
 }

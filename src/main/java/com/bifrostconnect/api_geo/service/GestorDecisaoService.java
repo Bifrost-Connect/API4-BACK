@@ -94,7 +94,10 @@ public class GestorDecisaoService {
 
             } else if ("TRATAMENTO".equals(etapa)) {
                 try {
-                    consolidacaoPublicacaoService.consolidar(processo, request.getGestorId());
+                    ExecucaoGeoespacial.executar(
+                            jdbcTemplate,
+                            "consolidação do pacote de publicação",
+                            () -> consolidacaoPublicacaoService.consolidar(processo, request.getGestorId()));
                 } catch (Exception e) {
                     auditoriaLogService.registrarLog(processo, "WARNING", "Consolidação de publicação gerou aviso: " + e.getMessage());
                 }
@@ -117,19 +120,11 @@ public class GestorDecisaoService {
                         "CONCLUIDA",
                         "Publicação oficial homologada pelo Gestor ID " + request.getGestorId() + ". Versão 1.0 fechada.");
 
-                jdbcTemplate.update("""
-                    UPDATE processo
-                    SET versao_fechada = TRUE,
-                        versao_oficial = '1.0',
-                        data_publicacao = now(),
-                        gestor_publicacao_id = ?
-                    WHERE id = ?
-                    """, request.getGestorId(), processoId);
-
                 processo.setVersaoFechada(true);
                 processo.setVersaoOficial("1.0");
                 processo.setDataPublicacao(LocalDateTime.now());
                 processo.setGestorPublicacaoId(request.getGestorId());
+                processoRepository.saveAndFlush(processo);
 
                 auditoriaLogService.registrarAuditoria(
                         request.getGestorId(),
@@ -145,10 +140,8 @@ public class GestorDecisaoService {
                 } catch (Exception ignored) {
                 }
 
-                try {
-                    jdbcTemplate.execute("SELECT fn_atualizar_dados_publicados()");
-                } catch (Exception ignored) {
-                }
+                // o mapa (vw_dados_publicados_mapa) não precisa de refresh manual: a trigger
+                // tg_atualiza_mapa_ao_publicar da V26 já roda quando a versão fecha
             }
 
         } else {

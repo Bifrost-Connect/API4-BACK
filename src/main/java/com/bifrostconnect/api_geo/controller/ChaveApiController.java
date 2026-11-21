@@ -1,5 +1,6 @@
 package com.bifrostconnect.api_geo.controller;
 
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.CacheControl;
@@ -22,11 +23,9 @@ import com.bifrostconnect.api_geo.service.ChaveApiService;
 
 import jakarta.validation.Valid;
 
-// Tarefa 11: ciclo de vida das chaves de API (rotas finais: /api/integracoes/chaves...).
-// US12 - Tarefa 16: CHAVE_API_GERENCIAR vale pro Administrador e pro INTEGRADOR_EXTERNO. O integrador
-// só enxerga e revoga as próprias chaves (a checagem do dono fica no ChaveApiService)
+// Tarefa 11 - US12: ciclo de vida das chaves de API (/api/integracoes/chaves e /api/admin/chaves-api).
 @RestController
-@RequestMapping("/integracoes/chaves")
+@RequestMapping({"/integracoes/chaves", "/admin/chaves-api"})
 @RequirePermission(Permissao.CHAVE_API_GERENCIAR)
 public class ChaveApiController {
 
@@ -64,5 +63,14 @@ public class ChaveApiController {
             Authentication auth) {
 
         return service.revogar(id, auth.getName());
+    }
+
+    @GetMapping("/{id}/logs")
+    public List<Map<String, Object>> listarLogs(
+            @PathVariable Long id,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String statusGroup) {
+
+        return service.listarLogs(id, search, statusGroup);
     }
 }

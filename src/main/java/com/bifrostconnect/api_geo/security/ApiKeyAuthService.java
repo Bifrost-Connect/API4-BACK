@@ -31,6 +31,7 @@ public class ApiKeyAuthService {
     public static final int LIMITE_REQUISICOES_POR_MINUTO = 60;
     private static final long JANELA_RATE_LIMIT_MS = 60_000L;
     private static final int TAMANHO_PREFIXO_LOG = 12; // o mesmo que fica em chaves_api.prefixo_chave
+    private static final int LIMITE_REQUISICOES_POR_MINUTO = 60;
     private static final long TTL_CACHE_MS = 60_000L; // 1 min (invalidado antes se revogar)
 
     public record ContextoApiKey(
@@ -263,6 +264,24 @@ public class ApiKeyAuthService {
                 ip);
     }
 
+    /**
+     * Registra uma chamada da API externa na tabela log_acessos_api_externa (V40).
+     */
+    public void registrarLogAcessoExterno(Long chaveId, String rota, int statusHttp, String ip) {
+        if (chaveId == null) {
+            return;
+        }
+        jdbc.update("""
+                INSERT INTO log_acessos_api_externa
+                    (chave_api_id, rota_acessada, status_http, ip_origem, data_acesso)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                chaveId,
+                truncar(rota, 255),
+                statusHttp,
+                truncar(ip, 45));
+    }
+
     // Tarefa 15: Chamado no momento da revogação para derrubar o cache instantaneamente
     public void invalidarCachePorId(Long chaveId) {
         if (chaveId == null) {
@@ -304,5 +323,12 @@ public class ApiKeyAuthService {
         } catch (Exception ignored) {
         }
         return resultado;
+    }
+
+    private static String truncar(String valor, int maximo) {
+        if (valor == null || valor.length() <= maximo) {
+            return valor;
+        }
+        return valor.substring(0, maximo);
     }
 }

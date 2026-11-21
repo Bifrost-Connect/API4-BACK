@@ -113,6 +113,16 @@ public class GlobalExceptionHandler {
                 .status(ex.getStatus())
                 .body(RespostaErroPadrao.corpo(
                         ex.getStatus(), ex.getCodigo(), ex.getMessage(), request.getRequestURI()));
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalArgument(
+            IllegalArgumentException ex) {
+
+        Map<String, String> error = new HashMap<>();
+        error.put("erro", ex.getMessage());
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(error);
     }
 
     @ExceptionHandler(TimeoutException.class)

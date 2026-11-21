@@ -18,7 +18,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class CamadasMapaService {
 
-    private static final int TAMANHO_MAXIMO_PAGINA = 200;
+    private static final int TAMANHO_MAXIMO_PAGINA = 500;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -174,9 +174,9 @@ public class CamadasMapaService {
                     ON fc.arquivo_processado_id = ap.id
                 JOIN processo p
                     ON ap.processo_id = p.id
-                JOIN etapa e
+                LEFT JOIN etapa e
                     ON e.id = p.etapa_atual_id
-                JOIN situacao s
+                LEFT JOIN situacao s
                     ON s.id = p.situacao_atual_id
                 LEFT JOIN conjunto c
                     ON c.id = p.conjunto_id
@@ -277,29 +277,41 @@ public class CamadasMapaService {
      */
     public List<Map<String, Object>> listarLocaisBasesPublicadas() {
         String sql = """
-            SELECT 
+            SELECT
                 CAST(p.id AS TEXT) AS id,
                 COALESCE(c.nome, o.nome, 'Carga #' || p.id) AS name,
                 COALESCE(o.sigla || ' (' || p.ano_safra || ')', c.nome, 'Base Oficial') AS type,
                 'Concluída' AS status,
                 COALESCE(
-                    ST_Y(ST_Centroid(ST_Extent(ST_Transform(fc.geom, 4326))::geometry)),
+                    blc.latitude,
+                    ST_Y(ST_Centroid(ST_Transform(ST_SetSRID(ST_Extent(fc.geom)::geometry, 4674), 4326))),
                     -15.7800
                 ) AS latitude,
                 COALESCE(
-                    ST_X(ST_Centroid(ST_Extent(ST_Transform(fc.geom, 4326))::geometry)),
+                    blc.longitude,
+                    ST_X(ST_Centroid(ST_Transform(ST_SetSRID(ST_Extent(fc.geom)::geometry, 4674), 4326))),
                     -47.9300
                 ) AS longitude,
-                COUNT(fc.id) AS total_feicoes
+                COALESCE(blc.total_feicoes, COUNT(fc.id)) AS total_feicoes
             FROM processo p
-            JOIN etapa e ON e.id = p.etapa_atual_id
-            JOIN situacao s ON s.id = p.situacao_atual_id
+            LEFT JOIN etapa e ON e.id = p.etapa_atual_id
+            LEFT JOIN situacao s ON s.id = p.situacao_atual_id
             LEFT JOIN conjunto c ON c.id = p.conjunto_id
             LEFT JOIN orgao o ON o.id = p.orgao_id
-            LEFT JOIN arquivo_processado ap ON ap.processo_id = p.id
-            LEFT JOIN feicao_carga fc ON fc.arquivo_processado_id = ap.id
+            LEFT JOIN base_localizacao_cache blc ON blc.processo_id = p.id
+            LEFT JOIN LATERAL (
+                SELECT ap.id AS arquivo_processado_id
+                FROM arquivo_processado ap
+                WHERE blc.processo_id IS NULL
+                  AND ap.processo_id = p.id
+                  AND EXISTS (SELECT 1 FROM feicao_carga f WHERE f.arquivo_processado_id = ap.id)
+                ORDER BY ap.versao DESC, ap.id DESC
+                LIMIT 1
+            ) cv ON TRUE
+            LEFT JOIN feicao_carga fc ON fc.arquivo_processado_id = cv.arquivo_processado_id
             WHERE (p.versao_fechada = TRUE OR (e.nome = 'PUBLICACAO' AND s.nome = 'CONCLUIDA'))
-            GROUP BY p.id, c.nome, o.nome, o.sigla, p.ano_safra, s.nome
+            GROUP BY p.id, c.nome, o.nome, o.sigla, p.ano_safra, s.nome,
+                     blc.latitude, blc.longitude, blc.total_feicoes
             ORDER BY p.id DESC
             """;
         try {

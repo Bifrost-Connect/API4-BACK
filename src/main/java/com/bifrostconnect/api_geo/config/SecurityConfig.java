@@ -19,9 +19,11 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import jakarta.servlet.http.HttpServletResponse;
 
 import com.bifrostconnect.api_geo.security.AcessoNegadoHandler;
 import com.bifrostconnect.api_geo.security.ApiKeyAuthService;
@@ -76,9 +78,16 @@ public class SecurityConfig {
             HttpSecurity http,
             JwtService jwtService,
             UsuarioSessaoService usuarioSessaoService,
-            ApiKeyAuthService apiKeyAuthService, // <-- ADICIONAR PARÂMETRO
+            ApiKeyAuthService apiKeyAuthService,
             AcessoNegadoHandler acessoNegadoHandler)
             throws Exception {
+
+        AuthenticationEntryPoint authenticationEntryPoint = (request, response, authException) -> {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            response.getWriter().write("{\"status\":401,\"erro\":\"Não autenticado\",\"mensagem\":\"Credenciais ausentes ou inválidas.\"}");
+        };
 
         http
             .csrf(csrf -> csrf.disable())
@@ -90,14 +99,20 @@ public class SecurityConfig {
                 .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated()
             )
-            .exceptionHandling(e -> e.accessDeniedHandler(acessoNegadoHandler))
+            .exceptionHandling(e -> e
+                .authenticationEntryPoint(authenticationEntryPoint)
+                .accessDeniedHandler(acessoNegadoHandler)
+            )
+            .addFilterBefore(
+                new ApiKeyAuthenticationFilter(apiKeyAuthService),
+                BasicAuthenticationFilter.class)
             .addFilterBefore(
                 new ApiKeyAuthenticationFilter(apiKeyAuthService), // <-- ADICIONAR FILTRO EXTERNO
                 BasicAuthenticationFilter.class)
             .addFilterBefore(
                 new JwtAuthenticationFilter(jwtService, usuarioSessaoService),
                 BasicAuthenticationFilter.class)
-            .httpBasic(Customizer.withDefaults());
+            .httpBasic(basic -> basic.authenticationEntryPoint(authenticationEntryPoint));
 
         return http.build();
     }

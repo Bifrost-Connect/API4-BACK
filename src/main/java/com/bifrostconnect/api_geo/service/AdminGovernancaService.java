@@ -87,7 +87,7 @@ public class AdminGovernancaService {
         }
 
         StringBuilder where = new StringBuilder(
-                " WHERE acao IN (" +
+                " WHERE a.acao IN (" +
                 "'USUARIO_CRIADO', " +
                 "'USUARIO_ATIVADO', " +
                 "'USUARIO_INATIVADO', " +
@@ -100,27 +100,27 @@ public class AdminGovernancaService {
         List<Object> args = new ArrayList<>();
 
         if (usuarioId != null) {
-            where.append(" AND usuario_id=?");
+            where.append(" AND a.usuario_id=?");
             args.add(usuarioId);
         }
 
         if (acao != null && !acao.isBlank()) {
-            where.append(" AND acao=?");
+            where.append(" AND a.acao=?");
             args.add(acao.trim());
         }
 
         if (de != null && !de.isBlank()) {
-            where.append(" AND data_hora >= CAST(? AS timestamp)");
+            where.append(" AND a.data_hora >= CAST(? AS timestamp)");
             args.add(de.trim());
         }
 
         if (ate != null && !ate.isBlank()) {
-            where.append(" AND data_hora <= CAST(? AS timestamp)");
+            where.append(" AND a.data_hora <= CAST(? AS timestamp)");
             args.add(ate.trim());
         }
 
         Long total = jdbc.queryForObject(
-                "SELECT count(*) FROM auditoria" + where,
+                "SELECT count(*) FROM auditoria a" + where,
                 Long.class,
                 args.toArray());
 
@@ -128,10 +128,11 @@ public class AdminGovernancaService {
         args.add((long) page * size);
 
         List<Map<String, Object>> content = jdbc.queryForList(
-                "SELECT id, usuario_id, processo_id, acao, descricao, " +
-                "detalhes, ip, data_hora FROM auditoria" +
+                "SELECT a.id, a.usuario_id, u.nome AS usuario_nome, u.email AS usuario_email, " +
+                "a.processo_id, a.acao, a.descricao, a.detalhes, a.ip, a.data_hora " +
+                "FROM auditoria a LEFT JOIN usuario u ON u.id = a.usuario_id" +
                 where +
-                " ORDER BY data_hora DESC LIMIT ? OFFSET ?",
+                " ORDER BY a.data_hora DESC LIMIT ? OFFSET ?",
                 args.toArray());
 
         Map<String, Object> resultado = new LinkedHashMap<>();

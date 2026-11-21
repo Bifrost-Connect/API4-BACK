@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.bifrostconnect.api_geo.exception.ErroPadronizadoException;
+import org.springframework.web.server.ResponseStatusException;
+
 import com.bifrostconnect.api_geo.security.ApiKeyAuthService.ContextoApiKey;
 import com.bifrostconnect.api_geo.security.ApiKeyAuthenticationFilter;
 import com.bifrostconnect.api_geo.security.RotaPublica;
@@ -34,7 +36,7 @@ public class ExternoConsumoController {
     }
 
     @GetMapping("/catalogo")
-    public ResponseEntity <?> listarCatalogo(
+    public ResponseEntity<?> listarCatalogo(
             @RequestParam(required = false) Long conjuntoId,
             @RequestParam(required = false) String anoSafra,
             @RequestParam(defaultValue = "0") int page,
@@ -58,7 +60,7 @@ public class ExternoConsumoController {
     }
 
     @GetMapping(value = "/bases/{id}/geojson", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity <?> consultarGeoJson(
+    public ResponseEntity<?> consultarGeoJson(
             @PathVariable Long id,
             HttpServletRequest request) {
 

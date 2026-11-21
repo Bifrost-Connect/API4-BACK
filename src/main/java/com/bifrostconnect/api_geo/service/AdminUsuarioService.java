@@ -3,9 +3,13 @@ package com.bifrostconnect.api_geo.service;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,7 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.bifrostconnect.api_geo.security.Permissao;
 import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class AdminUsuarioService {
@@ -23,12 +30,22 @@ public class AdminUsuarioService {
 
     private final JdbcTemplate jdbc;
     private final UsuarioSessaoService usuarioSessaoService;
+    private final ObjectMapper objectMapper;
     private final BCryptPasswordEncoder encoder =
             new BCryptPasswordEncoder();
 
-    public AdminUsuarioService(JdbcTemplate jdbc, UsuarioSessaoService usuarioSessaoService) {
+    @Autowired
+    public AdminUsuarioService(
+            JdbcTemplate jdbc,
+            UsuarioSessaoService usuarioSessaoService,
+            ObjectMapper objectMapper) {
         this.jdbc = jdbc;
         this.usuarioSessaoService = usuarioSessaoService;
+        this.objectMapper = objectMapper;
+    }
+
+    public AdminUsuarioService(JdbcTemplate jdbc, UsuarioSessaoService usuarioSessaoService) {
+        this(jdbc, usuarioSessaoService, new ObjectMapper());
     }
 
     @Transactional
@@ -72,6 +89,13 @@ public class AdminUsuarioService {
         }
     }
 
+    private static final String SELECT_USUARIO =
+            "SELECT u.id, u.nome, u.email, u.perfil_id, " +
+            "p.nome AS perfil, u.ativo, u.excecao_sod_autorizada, " +
+            "u.justificativa_sod, u.permissoes_customizadas::text AS permissoes_customizadas, " +
+            "u.data_criacao, u.data_atualizacao " +
+            "FROM usuario u JOIN perfil p ON p.id=u.perfil_id ";
+
     public Map<String, Object> listar(
             String nome,
             String email,
@@ -114,13 +138,11 @@ public class AdminUsuarioService {
         args.add((long) page * size);
 
         List<Map<String, Object>> content = jdbc.queryForList(
-                "SELECT u.id, u.nome, u.email, u.perfil_id, " +
-                "p.nome AS perfil, u.ativo, u.data_criacao, " +
-                "u.data_atualizacao " +
-                "FROM usuario u JOIN perfil p ON p.id=u.perfil_id " +
+                SELECT_USUARIO +
                 where +
                 " ORDER BY u.id LIMIT ? OFFSET ?",
                 args.toArray());
+        content.forEach(this::normalizarPermissoes);
 
         Map<String, Object> resultado = new LinkedHashMap<>();
         resultado.put("content", content);
@@ -141,18 +163,45 @@ public class AdminUsuarioService {
             String administrador,
             String ip) {
 
-        exigirUsuario(id);
+        List<Map<String, Object>> encontrados = jdbc.queryForList(
+                "SELECT u.perfil_id, p.nome AS perfil, u.excecao_sod_autorizada, " +
+                "u.justificativa_sod, u.permissoes_customizadas::text AS permissoes_customizadas " +
+                "FROM usuario u JOIN perfil p ON p.id=u.perfil_id WHERE u.id=?",
+                id);
+
+        if (encontrados.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND, "Usuário não encontrado.");
+        }
+
         bloquearAlteracaoDoProprioUsuario(id, administrador);
 
-        Long perfilId = numeroObrigatorio(body, "perfilId");
+        Map<String, Object> usuarioAtual = encontrados.get(0);
+        Long perfilId = body.get("perfilId") != null
+                ? numeroObrigatorio(body, "perfilId")
+                : ((Number) usuarioAtual.get("perfil_id")).longValue();
         exigirPerfil(perfilId);
 
-        boolean excecaoSoD =
-                Boolean.TRUE.equals(body.get("excecaoSoD"));
-
-        String justificativa = body.get("justificativa") == null
+        boolean currentExcecaoSod = Boolean.TRUE.equals(usuarioAtual.get("excecao_sod_autorizada"));
+        String currentJustificativaSod = usuarioAtual.get("justificativa_sod") == null
                 ? null
-                : body.get("justificativa").toString().trim();
+                : usuarioAtual.get("justificativa_sod").toString();
+        String currentPermissoesJson = usuarioAtual.get("permissoes_customizadas") == null
+                ? null
+                : usuarioAtual.get("permissoes_customizadas").toString();
+
+        boolean resetarPermissoes = Boolean.TRUE.equals(body.get("resetarPermissoes"));
+        boolean temChaveCustom = body.containsKey("permissoesCustomizadas");
+        boolean restaurandoPermissoes = resetarPermissoes
+                || (temChaveCustom && body.get("permissoesCustomizadas") == null);
+
+        boolean excecaoSoD = body.containsKey("excecaoSoD")
+                ? Boolean.TRUE.equals(body.get("excecaoSoD"))
+                : (!temChaveCustom && !resetarPermissoes ? false : currentExcecaoSod);
+
+        String justificativa = body.containsKey("justificativa")
+                ? (body.get("justificativa") == null ? null : body.get("justificativa").toString().trim())
+                : (body.containsKey("excecaoSoD") ? null : currentJustificativaSod);
 
         // mesma regra do CHECK previsto na US13-BANCO (Tarefa 25): pelo menos 10 caracteres
         if (excecaoSoD &&
@@ -162,15 +211,35 @@ public class AdminUsuarioService {
                     "A justificativa (mínimo de 10 caracteres) é obrigatória para uma exceção SoD.");
         }
 
-        String perfilAnterior = jdbc.queryForObject(
-                "SELECT p.nome FROM usuario u " +
-                "JOIN perfil p ON p.id=u.perfil_id WHERE u.id=?",
-                String.class,
-                id);
-
+        String perfilAnterior = String.valueOf(usuarioAtual.get("perfil"));
         String perfilNovo = nomePerfil(perfilId);
 
-        if (PERFIL_ADMIN.equals(perfilAnterior) && !PERFIL_ADMIN.equals(perfilNovo)) {
+        List<String> listaCustomizada = null;
+        String permissoesJson;
+        if (restaurandoPermissoes) {
+            permissoesJson = null;
+        } else if (temChaveCustom) {
+            if (!(body.get("permissoesCustomizadas") instanceof List<?> listaBruta)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "O campo permissoesCustomizadas deve ser uma lista de permissões.");
+            }
+            listaCustomizada = sanitizarPermissoes(listaBruta);
+            permissoesJson = serializarPermissoes(listaCustomizada);
+        } else if (!perfilAnterior.equals(perfilNovo)) {
+            permissoesJson = null;
+        } else {
+            permissoesJson = currentPermissoesJson;
+        }
+
+        boolean removeAdminPorCargo = PERFIL_ADMIN.equals(perfilAnterior) && !PERFIL_ADMIN.equals(perfilNovo);
+        boolean removeAdminPorCustomizacao = PERFIL_ADMIN.equals(perfilAnterior)
+                && PERFIL_ADMIN.equals(perfilNovo)
+                && listaCustomizada != null
+                && !usuarioSessaoService.resolverPermissoes(perfilNovo, listaCustomizada)
+                        .contains(Permissao.USUARIO_GERENCIAR);
+
+        if (removeAdminPorCargo || removeAdminPorCustomizacao) {
             bloquearSeForUltimoAdmin(id);
         }
 
@@ -178,15 +247,23 @@ public class AdminUsuarioService {
         // A exceção SoD fica gravada no usuário (o RbacService lê de lá) e some se não for declarada
         jdbc.update(
                 "UPDATE usuario SET perfil_id=?, excecao_sod_autorizada=?, justificativa_sod=?, " +
+                "permissoes_customizadas=CAST(? AS jsonb), " +
                 "versao_sessao = versao_sessao + 1, data_atualizacao=now() " +
                 "WHERE id=?",
                 perfilId,
                 excecaoSoD,
                 excecaoSoD ? justificativa : null,
+                permissoesJson,
                 id);
 
         String detalhes = "Perfil alterado de " + perfilAnterior
                 + " para " + perfilNovo + ".";
+
+        if (restaurandoPermissoes) {
+            detalhes += " Permissões customizadas restauradas para o padrão do perfil.";
+        } else if (listaCustomizada != null) {
+            detalhes += " Permissões customizadas atualizadas (" + listaCustomizada.size() + ").";
+        }
 
         if (excecaoSoD) {
             detalhes += " EXCEÇÃO SoD declarada pelo administrador. "
@@ -263,11 +340,7 @@ public class AdminUsuarioService {
 
     public Map<String, Object> buscar(Long id) {
         List<Map<String, Object>> linhas = jdbc.queryForList(
-                "SELECT u.id, u.nome, u.email, u.perfil_id, " +
-                "p.nome AS perfil, u.ativo, u.excecao_sod_autorizada, " +
-                "u.justificativa_sod, u.data_criacao, u.data_atualizacao " +
-                "FROM usuario u JOIN perfil p ON p.id=u.perfil_id " +
-                "WHERE u.id=?",
+                SELECT_USUARIO + "WHERE u.id=?",
                 id);
 
         if (linhas.isEmpty()) {
@@ -275,8 +348,38 @@ public class AdminUsuarioService {
                     HttpStatus.NOT_FOUND, "Usuário não encontrado.");
         }
 
+        Map<String, Object> usuario = linhas.get(0);
+        normalizarPermissoes(usuario);
         // A senha nunca é incluída na resposta.
-        return linhas.get(0);
+        return usuario;
+    }
+
+    private void normalizarPermissoes(Map<String, Object> usuario) {
+        Object bruto = usuario.get("permissoes_customizadas");
+        String json = bruto == null ? null : bruto.toString();
+        usuario.put("permissoes_customizadas", UsuarioSessaoService.deserializarPermissoes(objectMapper, json));
+    }
+
+    private List<String> sanitizarPermissoes(List<?> listaBruta) {
+        Set<String> unicas = new LinkedHashSet<>();
+        for (Object item : listaBruta) {
+            if (item == null) {
+                continue;
+            }
+            String codigo = item.toString().trim().toUpperCase(Locale.ROOT);
+            if (!codigo.isBlank()) {
+                unicas.add(codigo);
+            }
+        }
+        return new ArrayList<>(unicas);
+    }
+
+    private String serializarPermissoes(List<String> permissoes) {
+        try {
+            return objectMapper.writeValueAsString(permissoes);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Falha ao serializar permissoes_customizadas.", e);
+        }
     }
 
     // US13 - Tarefa 17: Administrador não mexe no próprio cargo/status (evita escalonamento e

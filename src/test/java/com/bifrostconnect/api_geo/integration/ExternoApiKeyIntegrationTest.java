@@ -18,6 +18,11 @@ import com.bifrostconnect.api_geo.security.UsuarioSessaoService.EstadoUsuario;
 import java.util.Map;
 import java.util.UUID;
 
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,18 +30,23 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @SpringBootTest
 @Transactional
 class ExternoApiKeyIntegrationTest {
+
+    private static final String SENHA_TESTE = "Senha@Forte123";
 
     @Autowired
     private WebApplicationContext context;
@@ -50,6 +60,10 @@ class ExternoApiKeyIntegrationTest {
     private MockMvc mockMvc;
     @MockBean
     private UsuarioSessaoService usuarioSessaoService;
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    private MockMvc mockMvc;
     private long adminId;
     private long basePublicadaId;
     private long baseRascunhoId;
@@ -94,13 +108,13 @@ class ExternoApiKeyIntegrationTest {
 
     @Test
     @WithMockUser(username = "admin@teste.local", roles = "ADMINISTRADOR")
-    @DisplayName("US12 - Tarefas 12, 13, 14 e 15: fluxo completo da API Key externa")
+    @DisplayName("US12 - Fluxo completo da API Key externa, logs em log_acessos_api_externa e contrato /admin/chaves-api")
     void deveValidarCicloCompletoApiKeyExterna() throws Exception {
         // 1. Sem header X-API-Key -> 401
         mockMvc.perform(get("/v1/externo/catalogo"))
                 .andExpect(status().isUnauthorized());
 
-        // 2. Emite uma chave com escopo restrito apenas a CATALOGO
+        // 2. Emite uma chave com escopo restrito apenas a CATALOGO via /integracoes/chaves
         MvcResult emissaoRes = mockMvc.perform(post("/integracoes/chaves")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -111,6 +125,8 @@ class ExternoApiKeyIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.prefixo_chave").isNotEmpty())
+                .andExpect(jsonPath("$.prefixo_mascarado").isNotEmpty())
                 .andReturn();
 
         @SuppressWarnings("unchecked")
@@ -118,6 +134,8 @@ class ExternoApiKeyIntegrationTest {
                 emissaoRes.getResponse().getContentAsString(), Map.class);
         Long chaveId = ((Number) criada.get("id")).longValue();
         String apiKey = (String) criada.get("chave");
+        String prefixoChave = (String) criada.get("prefixo_chave");
+        assertThat(criada.get("prefixo_mascarado")).isEqualTo(prefixoChave + "********");
 
         // 3. Acessa /catalogo -> 200 OK e lista apenas a base publicada
         mockMvc.perform(get("/v1/externo/catalogo")
@@ -126,7 +144,7 @@ class ExternoApiKeyIntegrationTest {
                 .andExpect(jsonPath("$.content[?(@.id == " + basePublicadaId + ")]").exists())
                 .andExpect(jsonPath("$.content[?(@.id == " + baseRascunhoId + ")]").doesNotExist());
 
-        // 4. Verifica Tarefa 14: ultimo_uso_em preenchido e auditoria gravada
+        // 4. Verifica ultimo_uso_em preenchido e auditoria gravada
         Object ultimoUso = jdbc.queryForObject(
                 "SELECT ultimo_uso_em FROM chaves_api WHERE id = ?", Object.class, chaveId);
         assertThat(ultimoUso).isNotNull();
@@ -141,8 +159,47 @@ class ExternoApiKeyIntegrationTest {
                         .header("X-API-Key", apiKey))
                 .andExpect(status().isForbidden());
 
-        // 6. Emite uma segunda chave com escopo LEITURA (acesso total de leitura)
-        MvcResult emissaoFull = mockMvc.perform(post("/integracoes/chaves")
+        // 5.1 Verifica logs de acesso da chave via GET /admin/chaves-api/{id}/logs
+        MvcResult logsRes = mockMvc.perform(get("/admin/chaves-api/{id}/logs", chaveId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].chave_api_id").value(chaveId))
+                .andExpect(jsonPath("$[0].rota_acessada").isNotEmpty())
+                .andExpect(jsonPath("$[0].ip_origem").isNotEmpty())
+                .andReturn();
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> logs = objectMapper.readValue(
+                logsRes.getResponse().getContentAsString(), List.class);
+        assertThat(logs).hasSize(2);
+        assertThat(logs).anySatisfy(log -> {
+            assertThat(log.get("rota_acessada")).isEqualTo("/v1/externo/catalogo");
+            assertThat(((Number) log.get("status_http")).intValue()).isEqualTo(200);
+        });
+        assertThat(logs).anySatisfy(log -> {
+            assertThat(log.get("rota_acessada")).isEqualTo("/v1/externo/bases/" + basePublicadaId + "/geojson");
+            assertThat(((Number) log.get("status_http")).intValue()).isEqualTo(403);
+        });
+
+        // Filtros em /admin/chaves-api/{id}/logs
+        mockMvc.perform(get("/admin/chaves-api/{id}/logs", chaveId)
+                        .param("statusGroup", "4xx"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status_http").value(403));
+
+        mockMvc.perform(get("/admin/chaves-api/{id}/logs", chaveId)
+                        .param("search", "catalogo")
+                        .param("statusGroup", "2xx"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status_http").value(200));
+
+        // Chave inexistente -> 404
+        mockMvc.perform(get("/admin/chaves-api/{id}/logs", 99999999L))
+                .andExpect(status().isNotFound());
+
+        // 6. Emite chave via /admin/chaves-api (contrato do front) com nome_parceiro, escopos do front e data ISO Z
+        MvcResult emissaoFront = mockMvc.perform(post("/admin/chaves-api")
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -152,6 +209,16 @@ class ExternoApiKeyIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
+                                  "nome_parceiro": "Parceiro Front ISO",
+                                  "escopos": ["CATALOGO_CONSULTAR", "MAPA_CONSULTAR"],
+                                  "data_expiracao": "2028-12-31T23:59:59Z"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.nome_parceiro").value("Parceiro Front ISO"))
+                .andExpect(jsonPath("$.prefixo_chave").isNotEmpty())
+                .andExpect(jsonPath("$.prefixo_mascarado").isNotEmpty())
+                .andExpect(jsonPath("$.data_expiracao").isNotEmpty())
                 .andReturn();
 
         @SuppressWarnings("unchecked")
@@ -176,20 +243,27 @@ class ExternoApiKeyIntegrationTest {
                         .header("X-API-Key", apiKeyFull))
                 .andExpect(status().isForbidden());
 
-        // 9. Tarefa 15: Revoga a chave e testa imediatamente -> 401 Unauthorized sem delay de cache
-        mockMvc.perform(patch("/integracoes/chaves/{id}/revogar", chaveFullId)
-                        .with(csrf()))
+        // 9. Revoga a chave via /admin/chaves-api/{id}/revogar e testa imediatamente -> 401 sem delay de cache
+        mockMvc.perform(patch("/admin/chaves-api/{id}/revogar", chaveFullId)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"usuario_revogacao_id\": 999}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REVOGADA"));
 
         mockMvc.perform(get("/v1/externo/catalogo")
                         .header("X-API-Key", apiKeyFull))
                 .andExpect(status().isUnauthorized());
+
+        // Logs externos permanecem preservados após revogação
+        mockMvc.perform(get("/admin/chaves-api/{id}/logs", chaveFullId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3));
     }
 
     @Test
     @WithMockUser(username = "admin@teste.local", roles = "ADMINISTRADOR")
-    @DisplayName("US12 - Tarefa 14: Rate Limiting bloqueia na 61ª requisição no mesmo minuto com 429")
+    @DisplayName("US12 - Rate Limiting bloqueia na 61ª requisição no mesmo minuto com 429 e registra no log externo")
     void deveBloquearQuandoExceder60RequisicoesPorMinuto() throws Exception {
         MvcResult emissaoRes = mockMvc.perform(post("/integracoes/chaves")
                         .with(csrf())
@@ -218,6 +292,128 @@ class ExternoApiKeyIntegrationTest {
         mockMvc.perform(get("/v1/externo/catalogo")
                         .header("X-API-Key", apiKey))
                 .andExpect(status().isTooManyRequests());
+
+        mockMvc.perform(get("/admin/chaves-api/{id}/logs", chaveId)
+                        .param("statusGroup", "4xx"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status_http").value(429));
+    }
+
+    @Test
+    @WithMockUser(username = "admin@teste.local", roles = "ADMINISTRADOR")
+    @DisplayName("US12 - Aceita data_expiracao sem offset, com offset Z e rejeita data passada")
+    void deveAceitarFormatosDeDataExpiracaoERejeitarDataPassada() throws Exception {
+        mockMvc.perform(post("/admin/chaves-api")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nome_parceiro": "Parceiro Sem Offset",
+                                  "escopos": ["CATALOGO_CONSULTAR"],
+                                  "data_expiracao": "2028-12-31T23:59:59"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data_expiracao").isNotEmpty());
+
+        mockMvc.perform(post("/admin/chaves-api")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nome_parceiro": "Parceiro Data Passada",
+                                  "escopos": ["CATALOGO_CONSULTAR"],
+                                  "data_expiracao": "2020-01-01T00:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("US12 - ADMINISTRADOR e GESTOR acessam /admin/chaves-api; ANALISTA, OPERADOR e AUDITOR recebem 403")
+    void deveRespeitarPermissoesPorPerfilNasRotasDeChavesApi() throws Exception {
+        String tokenAdmin = loginComPerfil("ADMINISTRADOR");
+        String tokenGestor = loginComPerfil("GESTOR");
+        String tokenAnalista = loginComPerfil("ANALISTA");
+        String tokenOperador = loginComPerfil("OPERADOR");
+        String tokenAuditor = loginComPerfil("AUDITOR");
+
+        mockMvc.perform(comToken(get("/admin/chaves-api"), tokenAdmin))
+                .andExpect(status().isOk());
+
+        MvcResult criadaPorAdmin = mockMvc.perform(comToken(post("/admin/chaves-api"), tokenAdmin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nome_parceiro": "Parceiro Admin",
+                                  "escopos": ["CATALOGO_CONSULTAR"]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long chaveAdminId = objectMapper.readTree(criadaPorAdmin.getResponse().getContentAsString())
+                .get("id").asLong();
+
+        mockMvc.perform(comToken(get("/admin/chaves-api/{id}/logs", chaveAdminId), tokenAdmin))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(comToken(get("/admin/chaves-api"), tokenGestor))
+                .andExpect(status().isOk());
+
+        MvcResult criadaPorGestor = mockMvc.perform(comToken(post("/admin/chaves-api"), tokenGestor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nome_parceiro": "Parceiro Gestor",
+                                  "escopos": ["CATALOGO_CONSULTAR"]
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long chaveGestorId = objectMapper.readTree(criadaPorGestor.getResponse().getContentAsString())
+                .get("id").asLong();
+
+        mockMvc.perform(comToken(get("/admin/chaves-api/{id}/logs", chaveGestorId), tokenGestor))
+                .andExpect(status().isOk());
+
+        for (String tokenNegado : List.of(tokenAnalista, tokenOperador, tokenAuditor)) {
+            mockMvc.perform(comToken(get("/admin/chaves-api"), tokenNegado))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(comToken(post("/admin/chaves-api"), tokenNegado)
+                            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(comToken(patch("/admin/chaves-api/{id}/revogar", chaveGestorId), tokenNegado))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(comToken(get("/admin/chaves-api/{id}/logs", chaveGestorId), tokenNegado))
+                    .andExpect(status().isForbidden());
+        }
+    }
+
+    private String loginComPerfil(String perfil) throws Exception {
+        String sufixo = String.valueOf(ThreadLocalRandom.current().nextInt(100_000_000, 999_999_999));
+        String email = "apikey." + perfil.toLowerCase() + "." + sufixo + "@teste.com";
+
+        jdbc.update("""
+                INSERT INTO usuario (nome, email, senha_hash, perfil_id, ativo)
+                VALUES (?, ?, ?, (SELECT id FROM perfil WHERE nome = ?), TRUE)
+                """,
+                "Teste " + perfil, email, passwordEncoder.encode(SENHA_TESTE), perfil);
+
+        String resposta = mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", email, "senha", SENHA_TESTE))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode json = objectMapper.readTree(resposta);
+        return json.get("token").asText();
+    }
+
+    private MockHttpServletRequestBuilder comToken(MockHttpServletRequestBuilder request, String token) {
+        return request.header("Authorization", "Bearer " + token);
     }
 
     private long criarBase(long conjuntoId, long orgaoId, String anoSafra, boolean publicada) {

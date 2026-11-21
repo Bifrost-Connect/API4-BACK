@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -22,14 +23,16 @@ import com.bifrostconnect.api_geo.dto.EmitirChaveApiRequest;
 import com.bifrostconnect.api_geo.exception.ErroPadronizadoException;
 import com.bifrostconnect.api_geo.exception.RecursoNaoEncontradoException;
 import com.bifrostconnect.api_geo.exception.RequisicaoInvalidaException;
+import com.bifrostconnect.api_geo.exception.RecursoNaoEncontradoException;
+import com.bifrostconnect.api_geo.exception.RequisicaoInvalidaException;
+import com.bifrostconnect.api_geo.security.ApiKeyAuthService;
 import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
 import com.bifrostconnect.api_geo.security.UsuarioSessaoService.EstadoUsuario;
 import com.bifrostconnect.api_geo.service.ChaveApiCriptoService.ChaveGerada;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.bifrostconnect.api_geo.security.ApiKeyAuthService;
 
-// Tarefa 11: ciclo de vida das chaves (emitir, listar, revogar) sobre a tabela chaves_api (V39).
+// Tarefa 11: ciclo de vida das chaves (emitir, listar, revogar, consultar logs) sobre chaves_api (V39) e log_acessos_api_externa (V40).
 // Só grava o hash SHA-256 e o prefixo; a chave em texto aparece apenas na resposta da emissão.
 @Service
 public class ChaveApiService {
@@ -71,7 +74,6 @@ public class ChaveApiService {
         this.objectMapper = objectMapper;
     }
 
-    // POST /integracoes/chaves
     @Transactional
     public Map<String, Object> emitir(EmitirChaveApiRequest request, String login) {
 
@@ -115,6 +117,14 @@ public class ChaveApiService {
     // Tarefa 16: o Administrador vê todas; o integrador só as que ele emitiu
     @Transactional(readOnly = true)
     public Map<String, Object> listar(String status, int page, int size, String login) {
+    @Transactional(readOnly = true)
+    public Map<String, Object> listar(String status, int page, int size) {
+        return listar(status, null, page, size);
+    }
+
+    // Só metadados e prefixo, nunca o hash nem a chave
+    @Transactional(readOnly = true)
+    public Map<String, Object> listar(String status, String search, int page, int size) {
 
         if (page < 0 || size < 1 || size > TAMANHO_MAXIMO_PAGINA) {
             throw new RequisicaoInvalidaException(
@@ -140,6 +150,13 @@ public class ChaveApiService {
 
             where.append(" AND x.status_efetivo = ?");
             args.add(statusNormalizado);
+        }
+
+        if (search != null && !search.isBlank()) {
+            String termo = "%" + search.trim() + "%";
+            where.append(" AND (LOWER(x.nome_parceiro) LIKE LOWER(?) OR LOWER(x.prefixo_chave) LIKE LOWER(?))");
+            args.add(termo);
+            args.add(termo);
         }
 
         Long total = jdbc.queryForObject(
@@ -222,6 +239,8 @@ public class ChaveApiService {
 
     private EstadoUsuario resolverUsuario(String login) {
         return usuarioSessaoService.buscarPorLogin(login)
+        return usuarioSessaoService.buscarPorLogin(login)
+                .map(EstadoUsuario::id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.FORBIDDEN,
                         "Usuário autenticado não encontrado na base de usuários."));
@@ -251,6 +270,13 @@ public class ChaveApiService {
         chave.put("id", rs.getLong("id"));
         chave.put("nome_parceiro", rs.getString("nome_parceiro"));
         chave.put("prefixo_mascarado", rs.getString("prefixo_chave") + MASCARA);
+        String prefixo = rs.getString("prefixo_chave");
+
+        // nomes das colunas de chaves_api + prefixo_mascarado para compatibilidade
+        chave.put("id", rs.getLong("id"));
+        chave.put("nome_parceiro", rs.getString("nome_parceiro"));
+        chave.put("prefixo_chave", prefixo);
+        chave.put("prefixo_mascarado", prefixo + MASCARA);
         chave.put("escopos", lerEscopos(rs.getString("escopos")));
         chave.put("status", rs.getString("status_efetivo"));
         chave.put("data_criacao", paraLocalDateTime(rs.getTimestamp("data_criacao")));

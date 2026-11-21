@@ -524,7 +524,7 @@ public class ProcessoDashboardRepository {
             String sql = """
                     SELECT ST_YMin(b.geom), ST_XMin(b.geom), ST_YMax(b.geom), ST_XMax(b.geom)
                     FROM (
-                        SELECT ST_Extent(ST_Transform(fc.geom, 4326)) AS geom
+                        SELECT ST_Transform(ST_SetSRID(ST_Extent(fc.geom)::geometry, 4674), 4326) AS geom
                         FROM feicao_carga fc
                         JOIN arquivo_processado ap ON ap.id = fc.arquivo_processado_id
                         WHERE ap.processo_id = :processoId

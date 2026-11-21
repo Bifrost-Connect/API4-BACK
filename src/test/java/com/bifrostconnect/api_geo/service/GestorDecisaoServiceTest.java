@@ -5,8 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -96,6 +99,31 @@ class GestorDecisaoServiceTest {
     }
 
     @Test
+    @DisplayName("Gate Tratamento: falha na consolidação registra WARNING e mantém transição para Publicação")
+    void deveRegistrarAvisoEManterTransicaoQuandoConsolidacaoFalharNoTratamento() {
+        Processo processo = new Processo();
+        processo.setId(10L);
+        processo.setVersaoFechada(false);
+
+        when(processoRepository.findById(10L)).thenReturn(Optional.of(processo));
+        when(consolidacaoPublicacaoService.consolidar(processo, 1L))
+                .thenThrow(new IllegalStateException("Erro simulado na consolidação"));
+
+        DecisaoGestorRequest request = DecisaoGestorRequest.builder()
+                .gestorId(1L)
+                .etapa("TRATAMENTO")
+                .decisao("APROVADO")
+                .build();
+
+        var res = service.processarDecisao(10L, request);
+
+        assertTrue((Boolean) res.get("sucesso"));
+        verify(auditoriaLogService).registrarLog(eq(processo), eq("WARNING"), contains("Erro simulado na consolidação"));
+        verify(processoEstadoService).atualizarEstado(eq(processo), eq("PUBLICACAO"), eq("EM_ANDAMENTO"), anyString());
+        verify(auditoriaLogService).registrarAuditoria(eq(1L), eq("APROVACAO_GESTOR_TRATAMENTO"), anyString());
+    }
+
+    @Test
     @DisplayName("Gate Publicação: Gestor homologa e fecha versão oficial")
     void deveAprovarPublicacaoEFecharVersao() {
         Processo processo = new Processo();
@@ -116,6 +144,8 @@ class GestorDecisaoServiceTest {
         assertTrue(processo.isVersaoFechada());
         assertEquals("1.0", processo.getVersaoOficial());
         verify(processoEstadoService).atualizarEstado(eq(processo), eq("PUBLICACAO"), eq("CONCLUIDA"), anyString());
+        verify(processoRepository).saveAndFlush(processo);
+        verify(jdbcTemplate, never()).update(argThat((String sql) -> sql != null && sql.contains("versao_fechada")), any(), any());
         verify(auditoriaLogService).registrarAuditoria(eq(1L), eq("FECHAMENTO_INDICADOR_OFICIAL"), anyString());
     }
 

@@ -8,8 +8,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -137,12 +135,18 @@ public class ProcessoService {
         } catch (FalhaGeoespacialException e) {
             // A carga já foi devidamente encaminhada para a Quarentena pelo processarArquivo
             return CompletableFuture.completedFuture(null);
-        } catch (Exception e) {
+        } catch (Throwable t) {
+            String msg = t.getMessage();
+            String resumo = t.getClass().getSimpleName()
+                    + (msg != null && !msg.isBlank() ? ": " + msg : "");
+            if (resumo.length() > 300) {
+                resumo = resumo.substring(0, 300);
+            }
             try {
                 Processo p = buscarPorId(processoId);
-                processoEstadoService.atualizarEstado(p, "VALIDACAO", "FALHOU", "Erro no processamento em segundo plano: " + e.getMessage());
-                auditoriaLogService.registrarLog(p, "ERROR", "Falha no processamento em segundo plano: " + e.getMessage());
-            } catch (Exception ignored) {}
+                processoEstadoService.atualizarEstado(p, "VALIDACAO", "FALHOU", "Erro no processamento em segundo plano: " + resumo);
+                auditoriaLogService.registrarLog(p, "ERROR", "Falha no processamento em segundo plano: " + resumo);
+            } catch (Throwable ignored) {}
             return CompletableFuture.completedFuture(null);
         }
     }
@@ -545,19 +549,11 @@ public class ProcessoService {
                 "Indicador fechado oficialmente pelo gestor."
         );
 
-        jdbcTemplate.update("""
-            UPDATE processo
-            SET versao_fechada = TRUE,
-                versao_oficial = '1.0',
-                data_publicacao = now(),
-                gestor_publicacao_id = ?
-            WHERE id = ?
-            """, gestorId, processo.getId());
-
         processo.setVersaoFechada(true);
         processo.setVersaoOficial("1.0");
         processo.setDataPublicacao(LocalDateTime.now());
         processo.setGestorPublicacaoId(gestorId);
+        processoRepository.saveAndFlush(processo);
 
         auditoriaLogService.registrarAuditoria(
                 gestorId,
@@ -574,41 +570,8 @@ public class ProcessoService {
         } catch (Exception ignored) {
         }
 
-        try {
-            jdbcTemplate.execute("SELECT fn_atualizar_dados_publicados()");
-        } catch (Exception ignored) {
-        }
-    }
-
-    public Resource exportarArquivoConsolidado(Long id, String formato) {
-        Processo processo = buscarPorId(id);
-
-        try {
-            Path pastaProcessada = Path.of("zona_processada_storage");
-            if (!Files.exists(pastaProcessada)) {
-                Files.createDirectories(pastaProcessada);
-            }
-
-            String extensao = formato != null && formato.equalsIgnoreCase("csv") ? "csv" : "geojson";
-            String nomeArquivo = id + "_exportado." + extensao;
-            Path caminhoArquivo = pastaProcessada.resolve(nomeArquivo);
-
-            if (!Files.exists(caminhoArquivo)) {
-                String conteudo = extensao.equals("csv")
-                    ? "id,situacao_atual_id,data_criacao\n" + processo.getId() + "," + processo.getSituacaoAtualId() + "," + processo.getDataCriacao()
-                    : "{\"type\": \"FeatureCollection\", \"features\": []}";
-                Files.writeString(caminhoArquivo, conteudo);
-            }
-
-            Resource recurso = new UrlResource(caminhoArquivo.toUri());
-            if (recurso.exists() && recurso.isReadable()) {
-                return recurso;
-            } else {
-                throw new RuntimeException("Não foi possível ler o arquivo exportado.");
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Erro ao gerar exportação para o processo ID: " + id, e);
-        }
+        // o mapa (vw_dados_publicados_mapa) não precisa de refresh manual: a trigger
+        // tg_atualiza_mapa_ao_publicar da V26 já roda quando a versão fecha
     }
 
     private Processo salvarGarantindoCampos(Processo processo) {
