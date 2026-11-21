@@ -45,11 +45,15 @@ public class AnaliseCruzamentoService {
     private static final String SQL_SOBREPOSICOES = """
             SELECT rc.arquivo_processado_id, rc.codigo_imovel, rc.fonte_camada,
                    rc.codigo_alerta_app, rc.hectares_sobrepostos,
-                   ROUND((ST_Area(fc.geom::geography) / 10000)::numeric, 4) AS area_hectares
+                   imovel.area_hectares
               FROM resultados_calculos rc
-              LEFT JOIN feicao_carga fc
-                ON fc.arquivo_processado_id = rc.arquivo_processado_id
-               AND fc.codigo_imovel = rc.codigo_imovel
+              LEFT JOIN LATERAL (
+                  SELECT ROUND((ST_Area(fc.geom::geography) / 10000)::numeric, 4) AS area_hectares
+                    FROM feicao_carga fc
+                   WHERE fc.arquivo_processado_id = rc.arquivo_processado_id
+                     AND fc.codigo_imovel = rc.codigo_imovel
+                   LIMIT 1
+              ) imovel ON TRUE
              WHERE rc.arquivo_processado_id IN (%s)
                AND rc.fonte_camada IN (%s)
              ORDER BY rc.arquivo_processado_id, rc.codigo_imovel, rc.fonte_camada, rc.codigo_alerta_app

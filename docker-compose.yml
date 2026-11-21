@@ -3,13 +3,58 @@ services:
     image: postgis/postgis:15-3.3
     container_name: postgres_postgis_api_geo
     environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: root
-      POSTGRES_DB: sistema_geo
+      POSTGRES_USER: ${DB_USER:-root}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
+      POSTGRES_DB: ${DB_NAME:-sistema_geo}
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-root} -d ${DB_NAME:-sistema_geo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  airflow_geodatahub:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: airflow_geodatahub_backend
+    depends_on:
+      db_sistema_geo:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${DB_USER:-root}:${DB_PASSWORD:-root}@db_sistema_geo:5432/${DB_NAME:-sistema_geo}
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET:-geodatahub-airflow-secret}
+      AIRFLOW_CONN_POSTGRES_GEO: postgresql://${DB_USER:-root}:${DB_PASSWORD:-root}@db_sistema_geo:5432/${DB_NAME:-sistema_geo}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      COFRE_LOCAL_DIR: /opt/airflow/data/cofre
+      DATA_DIR_CONTAINER: /opt/airflow/data
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://host.docker.internal:8080/api}
+      AIRFLOW_INTERNAL_TOKEN: ${AIRFLOW_INTERNAL_TOKEN:-geodatahub-airflow-internal-token}
+      DRIVE_ROOT_FOLDER_ID: ${DRIVE_ROOT_FOLDER_ID:-}
+      PYTHONPATH: /opt/airflow/plugins
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/geodatahub_airflow:/opt/airflow/plugins/geodatahub_airflow
+      - ./zona_bruta_storage:/opt/airflow/data/cofre
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: >
+      bash -c "
+      airflow db migrate &&
+      airflow users create --username ${AIRFLOW_API_USER:-admin} --password ${AIRFLOW_API_PASSWORD:-admin} --firstname GeoData --lastname Hub --role Admin --email admin@georural.com.br || true &&
+      (airflow scheduler &) &&
+      exec airflow webserver --port 8080
+      "
     restart: unless-stopped
 
 volumes:

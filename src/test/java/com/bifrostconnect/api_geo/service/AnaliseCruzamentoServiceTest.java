@@ -195,4 +195,22 @@ class AnaliseCruzamentoServiceTest {
         assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, erro.getStatusCode());
         assertTrue(erro.getReason().contains("99"));
     }
+
+    @Test
+    void consultaSobreposicoesUsaLeftJoinLateralComLimit1ParaAreaDoImovel() {
+        BancoFalso banco = new BancoFalso();
+        banco.bases = List.of(base(7L, 42L));
+        AnaliseCruzamentoService service = new AnaliseCruzamentoService(banco, calculo(banco));
+
+        service.cruzar(filtro(null, null, null));
+
+        String sql = banco.sqls.get(1);
+        assertTrue(sql.contains("imovel.area_hectares"));
+        assertTrue(sql.contains("LEFT JOIN LATERAL"));
+        assertTrue(sql.contains("LIMIT 1"));
+        assertTrue(sql.contains("fc.arquivo_processado_id = rc.arquivo_processado_id"));
+        assertTrue(sql.contains("fc.codigo_imovel = rc.codigo_imovel"));
+        assertTrue(sql.contains("rc.arquivo_processado_id IN (?)"));
+        assertTrue(sql.contains("rc.fonte_camada IN (?, ?, ?, ?)"));
+    }
 }

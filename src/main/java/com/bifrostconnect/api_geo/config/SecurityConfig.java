@@ -96,6 +96,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                .requestMatchers("/conectores/interno/**").permitAll()
                 .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated()
             )
@@ -105,9 +106,6 @@ public class SecurityConfig {
             )
             .addFilterBefore(
                 new ApiKeyAuthenticationFilter(apiKeyAuthService),
-                BasicAuthenticationFilter.class)
-            .addFilterBefore(
-                new ApiKeyAuthenticationFilter(apiKeyAuthService), // <-- ADICIONAR FILTRO EXTERNO
                 BasicAuthenticationFilter.class)
             .addFilterBefore(
                 new JwtAuthenticationFilter(jwtService, usuarioSessaoService),

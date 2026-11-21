@@ -159,9 +159,12 @@ public class CatalogoBasesService {
     // andamento esse número nem é mostrado
     private static final String SUBQUERY_TOTAL_FEICOES = """
             CASE WHEN v.pronta_para_consulta THEN
-                (SELECT COUNT(*) FROM feicao_carga fc
-                   JOIN vw_copia_vigente cv ON cv.arquivo_processado_id = fc.arquivo_processado_id
-                  WHERE cv.processo_id = v.id)
+                COALESCE(
+                    (SELECT blc.total_feicoes FROM base_localizacao_cache blc WHERE blc.processo_id = v.id),
+                    (SELECT COUNT(*) FROM feicao_carga fc
+                       JOIN vw_copia_vigente cv ON cv.arquivo_processado_id = fc.arquivo_processado_id
+                      WHERE cv.processo_id = v.id)
+                )
             END AS total_feicoes
             """;
 

@@ -19,6 +19,7 @@ import java.util.Map;
 public class CamadasMapaService {
 
     private static final int TAMANHO_MAXIMO_PAGINA = 500;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -184,11 +185,28 @@ public class CamadasMapaService {
                     ON o.id = p.orgao_id
                 """;
 
-        Long total = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) " + from + filtros,
-                Long.class,
-                filtroParams.toArray()
-        );
+        Long total = null;
+        if (processoId != null
+                && (bbox == null || bbox.isBlank())
+                && (busca == null || busca.isBlank())
+                && conjuntoId == null
+                && (anoSafra == null || anoSafra.isBlank())) {
+            List<Long> cachedTotals = jdbcTemplate.queryForList(
+                    "SELECT total_feicoes FROM base_localizacao_cache WHERE processo_id = ?",
+                    Long.class,
+                    processoId
+            );
+            if (cachedTotals != null && !cachedTotals.isEmpty() && cachedTotals.get(0) != null) {
+                total = cachedTotals.get(0);
+            }
+        }
+        if (total == null) {
+            total = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) " + from + filtros,
+                    Long.class,
+                    filtroParams.toArray()
+            );
+        }
 
         long deslocamento = (long) page * size;
 
@@ -245,7 +263,7 @@ public class CamadasMapaService {
         Map<String, Object> resposta;
 
         try {
-            resposta = new ObjectMapper().readValue(
+            resposta = OBJECT_MAPPER.readValue(
                     geoJsonString,
                     Map.class
             );

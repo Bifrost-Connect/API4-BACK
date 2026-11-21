@@ -461,6 +461,38 @@ public class ExportacaoService {
     }
 
     private long contar(FiltroExportacao filtro) {
+        boolean temFiltroSobreposicao = filtro.comSobreposicao() != null
+                || filtro.hectaresMin() != null
+                || (filtro.fonteCamada() != null && !filtro.fonteCamada().isBlank());
+        boolean temCodigoImovel = filtro.codigoImovel() != null && !filtro.codigoImovel().isBlank();
+
+        if (!temFiltroSobreposicao && !temCodigoImovel) {
+            Long cached = jdbcTemplate.query(
+                    "SELECT total_feicoes FROM base_localizacao_cache WHERE processo_id = ?",
+                    rs -> rs.next() ? rs.getLong("total_feicoes") : null,
+                    filtro.processoId());
+            if (cached != null) {
+                return cached;
+            }
+            Long total = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM vw_copia_vigente cv
+                    JOIN feicao_carga fc ON fc.arquivo_processado_id = cv.arquivo_processado_id
+                    WHERE cv.processo_id = ?
+                    """, Long.class, filtro.processoId());
+            return total == null ? 0 : total;
+        }
+
+        if (!temFiltroSobreposicao) {
+            Long total = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM vw_copia_vigente cv
+                    JOIN feicao_carga fc ON fc.arquivo_processado_id = cv.arquivo_processado_id
+                    WHERE cv.processo_id = ? AND fc.codigo_imovel = ?
+                    """, Long.class, filtro.processoId(), filtro.codigoImovel().trim());
+            return total == null ? 0 : total;
+        }
+
         List<Object> params = new ArrayList<>();
         String where = montarWhere(filtro, params);
         Long total = jdbcTemplate.queryForObject("SELECT COUNT(*)" + FROM_RELATORIO + where, Long.class, params.toArray());

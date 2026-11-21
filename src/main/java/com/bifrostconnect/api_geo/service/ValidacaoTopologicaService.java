@@ -112,16 +112,35 @@ public class ValidacaoTopologicaService {
         List<Problema> problemas = new ArrayList<>(carga.rejeitadas());
         // Tarefa 15: ST_IsValid/ST_Equals/ST_Intersection nas geometrias da carga; se o GEOS
         // estourar, vira FalhaGeoespacialException (422) e o Tratamento manda pra Quarentena
-        problemas.addAll(ExecucaoGeoespacial.executar(jdbcTemplate, "validação topológica dos polígonos", () -> {
-            List<Problema> encontrados = new ArrayList<>(buscarInvalidas(arquivoId));
-            encontrados.addAll(buscarDuplicadas(arquivoId));
-            encontrados.addAll(buscarSobrepostas(arquivoId));
-            return encontrados;
-        }));
+        problemas.addAll(executarChecagensTopologicas(arquivoId));
 
         registrarOcorrencias(processo, problemas);
 
         return new ResultadoValidacaoTopologica(carga.totalFeicoes(), carga.carregadas(), problemas);
+    }
+
+    /**
+     * Executa apenas as validações topológicas em banco para feições já inseridas em {@code feicao_carga}
+     * (fluxo de ingestão assíncrona via Airflow/ogr2ogr).
+     */
+    public ResultadoValidacaoTopologica validarFeicoesJaCarregadas(
+            Processo processo,
+            ArquivoProcessado copiaTrabalho,
+            int totalFeicoes,
+            int feicoesCarregadas) {
+        Long arquivoId = copiaTrabalho.getId();
+        List<Problema> problemas = executarChecagensTopologicas(arquivoId);
+        registrarOcorrencias(processo, problemas);
+        return new ResultadoValidacaoTopologica(totalFeicoes, feicoesCarregadas, problemas);
+    }
+
+    private List<Problema> executarChecagensTopologicas(Long arquivoId) {
+        return ExecucaoGeoespacial.executar(jdbcTemplate, "validação topológica dos polígonos", () -> {
+            List<Problema> encontrados = new ArrayList<>(buscarInvalidas(arquivoId));
+            encontrados.addAll(buscarDuplicadas(arquivoId));
+            encontrados.addAll(buscarSobrepostas(arquivoId));
+            return encontrados;
+        });
     }
 
     private List<Problema> buscarInvalidas(Long arquivoId) {

@@ -275,6 +275,20 @@ class ExportacaoIntegrationTest {
                 .andExpect(jsonPath("$.total_registros").value(3))
                 .andExpect(jsonPath("$.amostra.length()").value(3));
 
+        mockMvc.perform(get("/exportacoes/preview")
+                        .param("processo_id", processo.toString())
+                        .param("codigo_imovel", "CAR-0001")
+                        .with(gestor()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total_registros").value(1))
+                .andExpect(jsonPath("$.amostra.length()").value(1));
+
+        jdbcTemplate.update("DELETE FROM base_localizacao_cache WHERE processo_id = ?", processo);
+        mockMvc.perform(get("/exportacoes/preview").param("processo_id", processo.toString()).with(gestor()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total_registros").value(15))
+                .andExpect(jsonPath("$.tamanho_amostra").value(10));
+
         // preview não é download: não entra no histórico
         assertEquals(0, contarLogs(processo));
     }
