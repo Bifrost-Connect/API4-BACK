@@ -1,0 +1,6 @@
+apache-airflow-providers-postgres>=5.10.0
+google-api-python-client>=2.125.0
+google-auth>=2.29.0
+requests>=2.31.0
+urllib3>=2.2.0
+psycopg2-binary>=2.9.9
