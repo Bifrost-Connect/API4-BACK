@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import com.bifrostconnect.api_geo.security.Permissao;
 import com.bifrostconnect.api_geo.security.RequirePermission;
+import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -63,6 +64,7 @@ public class CargaController {
     private final GestorDecisaoService gestorDecisaoService;
     private final CargaCamadaReferenciaService cargaCamadaReferenciaService;
     private final ProcessoService processoService;
+    private final UsuarioSessaoService usuarioSessaoService;
     
     // Construtor unificado corrigido
     public CargaController(
@@ -77,7 +79,8 @@ public class CargaController {
             CancelamentoCargaService cancelamentoCargaService,
             GestorDecisaoService gestorDecisaoService,
             CargaCamadaReferenciaService cargaCamadaReferenciaService,
-            ProcessoService processoService) {
+            ProcessoService processoService,
+            UsuarioSessaoService usuarioSessaoService) {
 
         this.metadadosCargaService = metadadosCargaService;
         this.arquivoUploadService = arquivoUploadService;
@@ -91,6 +94,18 @@ public class CargaController {
         this.gestorDecisaoService = gestorDecisaoService;
         this.cargaCamadaReferenciaService = cargaCamadaReferenciaService;
         this.processoService = processoService;
+        this.usuarioSessaoService = usuarioSessaoService;
+    }
+
+    // sem usuarioId na requisição, vale quem está logado. Antes ia direto pro usuário 1 fixo,
+    // que a V50 apagou, e aí a auditoria estourava a FK. O 1 só sobra quando não dá pra
+    // identificar ninguém (ex.: @WithMockUser nos testes, que cadastram o próprio usuário 1)
+    private Long usuarioOuLogado(Long usuarioId) {
+        if (usuarioId != null) {
+            return usuarioId;
+        }
+        Long logado = usuarioSessaoService.idUsuarioLogado();
+        return logado != null ? logado : 1L;
     }
 
     @RequirePermission(Permissao.CARGA_CONSULTAR)
@@ -134,8 +149,8 @@ public class CargaController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(
                     value = "usuarioId",
-                    required = false,
-                    defaultValue = "1") Long usuarioId) {
+                    required = false) Long usuarioId) {
+        usuarioId = usuarioOuLogado(usuarioId);
 
         if (file.isEmpty()) {
             return ResponseEntity
@@ -304,7 +319,8 @@ public class CargaController {
     @PostMapping("/{id}/quarentena/notificar-operador")
     public ResponseEntity<Void> notificarOperador(
             @PathVariable Long id,
-            @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
+            @RequestParam(value = "usuarioId", required = false) Long usuarioId) {
+        usuarioId = usuarioOuLogado(usuarioId);
         
         encaminhamentoQuarentenaService.notificarOperador(id, usuarioId);
         return ResponseEntity.noContent().build();
@@ -318,7 +334,8 @@ public class CargaController {
     public ResponseEntity<?> reprocessarCarga(
             @PathVariable Long id,
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
+            @RequestParam(value = "usuarioId", required = false) Long usuarioId) {
+        usuarioId = usuarioOuLogado(usuarioId);
 
         if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body("O arquivo enviado para reprocessamento está vazio.");
@@ -350,7 +367,8 @@ public class CargaController {
     public ResponseEntity<Void> cancelarCarga(
             @PathVariable Long id,
             @Valid @RequestBody CancelamentoRequest request,
-            @RequestParam(value = "usuarioId", required = false, defaultValue = "1") Long usuarioId) {
+            @RequestParam(value = "usuarioId", required = false) Long usuarioId) {
+        usuarioId = usuarioOuLogado(usuarioId);
 
         cancelamentoCargaService.cancelarCarga(id, request.getMotivo(), usuarioId);
         return ResponseEntity.noContent().build();

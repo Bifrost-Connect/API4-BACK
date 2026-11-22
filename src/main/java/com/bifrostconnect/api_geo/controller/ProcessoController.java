@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.http.HttpStatus;
 import com.bifrostconnect.api_geo.security.Permissao;
 import com.bifrostconnect.api_geo.security.RequirePermission;
+import com.bifrostconnect.api_geo.security.UsuarioSessaoService;
 
 @RestController
 @RequestMapping("/processos")
@@ -43,15 +44,29 @@ public class ProcessoController {
     private final ProcessoService processoService;
     private final ProcessoDashboardService processoDashboardService;
     private final ArquivoOriginalRepository arquivoOriginalRepository;
+    private final UsuarioSessaoService usuarioSessaoService;
 
     public ProcessoController(
             ProcessoService processoService,
             ProcessoDashboardService processoDashboardService,
-            ArquivoOriginalRepository arquivoOriginalRepository) {
+            ArquivoOriginalRepository arquivoOriginalRepository,
+            UsuarioSessaoService usuarioSessaoService) {
 
         this.processoService = processoService;
         this.processoDashboardService = processoDashboardService;
         this.arquivoOriginalRepository = arquivoOriginalRepository;
+        this.usuarioSessaoService = usuarioSessaoService;
+    }
+
+    // sem usuarioId na requisição, vale quem está logado. Antes ia direto pro usuário 1 fixo,
+    // que a V50 apagou, e aí a auditoria estourava a FK. O 1 só sobra quando não dá pra
+    // identificar ninguém (ex.: @WithMockUser nos testes, que cadastram o próprio usuário 1)
+    private Long usuarioOuLogado(Long usuarioId) {
+        if (usuarioId != null) {
+            return usuarioId;
+        }
+        Long logado = usuarioSessaoService.idUsuarioLogado();
+        return logado != null ? logado : 1L;
     }
 
     @RequirePermission(Permissao.CARGA_CONSULTAR)
@@ -146,9 +161,8 @@ public class ProcessoController {
             @RequestParam(required = false) String nomeArquivo,
             @RequestParam(required = false, defaultValue = "false") boolean async,
             @RequestParam(
-                    required = false,
-                    defaultValue = "1"
-            ) Long usuarioId) {
+                    required = false) Long usuarioId) {
+        usuarioId = usuarioOuLogado(usuarioId);
 
         if (async) {
             try {

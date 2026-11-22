@@ -11,6 +11,8 @@ import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -71,6 +73,15 @@ public class UsuarioSessaoService {
 
     public UsuarioSessaoService(JdbcTemplate jdbc) {
         this(jdbc, new ObjectMapper());
+    }
+
+    // id de quem fez a requisição (sai do JWT); null se não tiver ninguém logado
+    public Long idUsuarioLogado() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getName() == null || auth.getName().isBlank()) {
+            return null;
+        }
+        return buscarPorLogin(auth.getName()).map(EstadoUsuario::id).orElse(null);
     }
 
     public Optional<EstadoUsuario> buscarPorId(Long id) {

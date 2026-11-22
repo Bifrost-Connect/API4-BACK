@@ -277,7 +277,7 @@ public class ProcessoDashboardRepository {
 
         // 1. Ocorrências ativas registradas em ocorrencia_validacao (apenas status PENDENTE do ciclo atual)
         String sqlOcorrencias = """
-                SELECT ov.id, r.nome AS regra, ov.mensagem, ov.severidade, ov.data_deteccao, ov.contexto
+                SELECT ov.id, r.nome AS regra, ov.mensagem, ov.severidade, ov.data_deteccao, ov.detalhes AS contexto
                 FROM ocorrencia_validacao ov
                 JOIN processo_etapa pe ON pe.id = ov.processo_etapa_id
                 JOIN regra_validacao r ON r.id = ov.regra_id
