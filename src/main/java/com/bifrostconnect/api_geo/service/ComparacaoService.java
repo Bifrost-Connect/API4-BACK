@@ -146,8 +146,7 @@ public class ComparacaoService {
 
         Janela janela = montarJanela(idRegiao, bbox, idCargaA, idCargaB);
 
-        validarSobreposicao(janela, idCargaA, idCargaB);
-        Double tolerancia = toleranciaParaPayload(janela, idCargaA, idCargaB);
+        Double tolerancia = inspecionarJanela(janela, idCargaA, idCargaB);
 
         List<Object> parametros = new ArrayList<>(janela.parametros());
         parametros.add(idCargaA);
@@ -280,8 +279,7 @@ public class ComparacaoService {
 
         Janela janela = montarJanela(idRegiao, bbox, idCargaA, idCargaB);
 
-        validarSobreposicao(janela, idCargaA, idCargaB);
-        Double tolerancia = toleranciaParaPayload(janela, idCargaA, idCargaB);
+        Double tolerancia = inspecionarJanela(janela, idCargaA, idCargaB);
 
         List<Object> parametros = new ArrayList<>(janela.parametros());
         parametros.add(idCargaA);
@@ -313,13 +311,25 @@ public class ComparacaoService {
                 FROM recortes a
                 JOIN recortes b
                     ON a.processo_id = ? AND b.processo_id = ?
+            ),
+            areas AS (
+                SELECT
+                    ST_Area(geom_a::geography) / 10000 AS area_a,
+                    ST_Area(geom_b::geography) / 10000 AS area_b,
+                    ST_Area(aumento::geography) / 10000 AS area_aumento,
+                    ST_Area(reducao::geography) / 10000 AS area_reducao,
+                    ST_Area(mantido::geography) / 10000 AS area_mantido,
+                    aumento,
+                    reducao,
+                    mantido
+                FROM classes
             )
             SELECT
-                ST_Area(geom_a::geography) / 10000 AS area_a,
-                ST_Area(geom_b::geography) / 10000 AS area_b,
-                ST_Area(aumento::geography) / 10000 AS area_aumento,
-                ST_Area(reducao::geography) / 10000 AS area_reducao,
-                ST_Area(mantido::geography) / 10000 AS area_mantido,
+                area_a,
+                area_b,
+                area_aumento,
+                area_reducao,
+                area_mantido,
                 (
                     SELECT COALESCE(json_agg(json_build_object(
                         'type', 'Feature',
@@ -327,17 +337,17 @@ public class ComparacaoService {
             , 4326), 6)::json,
                         'properties', json_build_object(
                             'classe', c.classe,
-                            'areaHectares', ROUND((ST_Area(c.geom::geography) / 10000)::numeric, 4)
+                            'areaHectares', ROUND(c.area_ha::numeric, 4)
                         )
                     ) ORDER BY c.ordem), '[]'::json)::text
                     FROM (VALUES
-                        (1, 'NOVO_ALERTA', aumento),
-                        (2, 'REDUCAO_ALERTA', reducao),
-                        (3, 'MANTIDO', mantido)
-                    ) AS c(ordem, classe, geom)
+                        (1, 'NOVO_ALERTA', aumento, area_aumento),
+                        (2, 'REDUCAO_ALERTA', reducao, area_reducao),
+                        (3, 'MANTIDO', mantido, area_mantido)
+                    ) AS c(ordem, classe, geom, area_ha)
                     WHERE NOT ST_IsEmpty(c.geom)
                 ) AS features_json
-            FROM classes
+            FROM areas
             """;
 
         parametros.add(idCargaA);
@@ -457,7 +467,7 @@ public class ComparacaoService {
         return new Janela(
                 """
                 WITH janela AS (
-                    SELECT ST_Envelope(ST_Collect(fc.geom)) AS geom
+                    SELECT ST_SetSRID(ST_Extent(fc.geom)::geometry, 4674) AS geom
                     FROM vw_copia_vigente cv
                     JOIN feicao_carga fc
                         ON fc.arquivo_processado_id = cv.arquivo_processado_id
@@ -468,68 +478,60 @@ public class ComparacaoService {
                 resposta);
     }
 
-    // Tarefa 17: 422 quando as duas safras não se sobrepõem dentro da janela.
-    // Compara a cobertura (envelope das feições de cada carga na janela), não os
-    // polígonos em si: alerta 100% novo em B ainda é comparação válida
-    private void validarSobreposicao(Janela janela, Long idCargaA, Long idCargaB) {
+    // Tarefa 17/18: valida sobreposição das duas cargas na janela (422) e conta os
+    // vértices do recorte em uma única varredura para decidir se simplifica ou recusa (413)
+    private Double inspecionarJanela(Janela janela, Long idCargaA, Long idCargaB) {
         List<Object> parametros = new ArrayList<>(janela.parametros());
         parametros.add(idCargaA);
         parametros.add(idCargaB);
         parametros.add(idCargaA);
         parametros.add(idCargaB);
 
-        Boolean sobrepoe = jdbcTemplate.queryForObject(
+        InspecaoJanela inspecao = jdbcTemplate.queryForObject(
                 janela.cte() + """
-                , cobertura AS (
-                    SELECT cv.processo_id,
-                           ST_SetSRID(ST_Extent(fc.geom)::geometry, 4674) AS geom
+                , resumo_cargas AS (
+                    SELECT
+                        cv.processo_id,
+                        ST_SetSRID(ST_Extent(fc.geom)::geometry, 4674) AS geom,
+                        COALESCE(SUM(ST_NPoints(fc.geom)), 0) AS vertices
                 """ + FEICOES_NA_JANELA + """
                     GROUP BY cv.processo_id
                 )
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM cobertura a
-                    JOIN cobertura b
-                        ON a.processo_id = ? AND b.processo_id = ?
-                    CROSS JOIN janela
-                    WHERE ST_Area(ST_Intersection(
-                        ST_Intersection(a.geom, b.geom),
-                        ST_Envelope(janela.geom)
-                    )) > 0
-                )
+                SELECT
+                    EXISTS (
+                        SELECT 1
+                        FROM resumo_cargas a
+                        JOIN resumo_cargas b
+                            ON a.processo_id = ? AND b.processo_id = ?
+                        CROSS JOIN janela
+                        WHERE ST_Area(ST_Intersection(
+                            ST_Intersection(a.geom, b.geom),
+                            ST_Envelope(janela.geom)
+                        )) > 0
+                    ) AS sobrepoe,
+                    (SELECT COALESCE(SUM(r.vertices), 0) FROM resumo_cargas r) AS total_vertices
                 """,
-                Boolean.class,
+                (rs, rowNum) -> new InspecaoJanela(
+                        rs.getObject("sobrepoe", Boolean.class),
+                        rs.getLong("total_vertices")),
                 parametros.toArray());
 
+        Boolean sobrepoe = inspecao != null ? inspecao.sobrepoe() : null;
         if (!Boolean.TRUE.equals(sobrepoe)) {
             throw erro(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "As safras selecionadas não possuem sobreposição geográfica na região solicitada.");
         }
-    }
 
-    // Tarefa 18: conta os vértices que iriam no payload e decide se simplifica
-    // (devolve a tolerância), se manda como está (null) ou se recusa com 413
-    private Double toleranciaParaPayload(Janela janela, Long idCargaA, Long idCargaB) {
-        List<Object> parametros = new ArrayList<>(janela.parametros());
-        parametros.add(idCargaA);
-        parametros.add(idCargaB);
-
-        Long vertices = jdbcTemplate.queryForObject(
-                janela.cte() + "SELECT COALESCE(SUM(ST_NPoints(fc.geom)), 0) " + FEICOES_NA_JANELA,
-                Long.class,
-                parametros.toArray());
-
-        long total = vertices == null ? 0 : vertices;
-
-        if (total > limiteMaximoVertices) {
+        long totalVertices = inspecao.totalVertices();
+        if (totalVertices > limiteMaximoVertices) {
             throw erro(
                     HttpStatus.PAYLOAD_TOO_LARGE,
-                    "O recorte selecionado tem " + total + " vértices e passa do limite seguro de "
+                    "O recorte selecionado tem " + totalVertices + " vértices e passa do limite seguro de "
                             + limiteMaximoVertices + ". Selecione um município ou aproxime o zoom do mapa.");
         }
 
-        return total > limiteSimplificacaoVertices ? toleranciaSimplificacao : null;
+        return totalVertices > limiteSimplificacaoVertices ? toleranciaSimplificacao : null;
     }
 
     private String simplificar(String expressao, Double tolerancia) {
@@ -683,5 +685,10 @@ public class ComparacaoService {
     private record FeatureLinha(
             Long cargaId,
             String featureJson) {
+    }
+
+    private record InspecaoJanela(
+            Boolean sobrepoe,
+            long totalVertices) {
     }
 }
